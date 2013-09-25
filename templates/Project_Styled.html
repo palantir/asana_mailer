@@ -1,0 +1,39 @@
+{% extends "Project.html" %}
+{% block css_block %}
+    <style type="text/css">
+      h1, h2, h4, .task-name, .task-name-completed {
+        font-family: "Lucida Grande", sans-serif;
+      }
+      body > ul > li {
+        padding: 0.25em;
+      }
+      li {
+        width: 80em;
+      }
+      .comment, .description, .due-date,
+      .task-attribute, .task-tags, .user {
+        font-family: "Georgia", serif;
+      }
+      .comment {
+        font-style: italic;
+      }
+      .description {
+        font-weight: bold;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .due-date {
+        color: #C67428;
+        font-weight: bold;
+      }
+      .task-name-completed {
+        text-decoration: line-through;
+      }
+      .task-tags {
+        color: #C67428;
+      }
+      .user {
+        color: #2191A1;
+      }
+    </style>
+{% endblock %}

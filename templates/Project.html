@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>{{ project.name }} Daily Actions {{ current_date }}</title>
+    {% block css_block %}
+    {% endblock %}
+  </head>
+  <body>
+    <h1>{{ project.name }} Daily Actions {{ current_date }}</h1>
+    {% if project.description %}
+    <h4>{{ project.description }}</h4>
+    {% endif %}
+  {% block pre_block %}
+  {% endblock %}
+  {% block tasks_block %}
+  {% for section in project.sections %}
+    <h2>{{ section.name }}</h2>
+    {% if section.tasks %}
+    <ul>
+    {% for task in section.tasks %}
+
+    {% set task_name_class = 'task-name-completed' if task.completed else 'task-name' %}
+    {% set task_assignee = task.assignee if task.assignee else 'Unassigned' %}
+    {% set task_tags = ' (%s)'|format(task.tags|join(', ')) if task.tags %}
+
+    <li><span class="{{ task_name_class }}">{{ task.name }} - <span class="user">{{ task_assignee }}</span><span class="task-tags">{{ task_tags }}</span></span></li>
+      {% if task.due_date or task.description or task.latest_comment %}
+        <ul>
+          {% if task.due_date %}
+          <li><span class="task-attribute">Due Date:</span> <span class="due-date">{{ task.due_date }}</span></li>
+          {% endif %}
+          {% if task.latest_comment %}
+          <li><span class="task-attribute">Last Comment:</span> <span class="comment">{{ task.latest_comment.text }} - <span class="user">{{ task.latest_comment.created_by.name }}</span></span></li>
+          {% endif %}
+          {% if task.description %}
+          <li>
+            <span class="task-attribute">Description: </span><br>
+            <blockquote>
+              <span class="description">{{ task.description }}</span></li>
+            </blockquote>
+          </li>
+          {% endif %}
+        </ul>
+      {% endif %}
+    {% endfor %}
+    </ul>
+    {% endif %}
+  {% endfor %}
+  {% endblock %}
+  {% block post_block %}
+  {% endblock %}
+  </body>
+</html>
