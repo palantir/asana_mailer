@@ -67,7 +67,7 @@ files. Here's an example for an evolving project:
 
 2. Alright, so I want to keep recently completed tasks for those who are going
    to receive the emails but aren't attending the standup, and I'd also like to
-   only filter out user visible bugs tagged with "user_concern".
+   filter out all tasks except user visible bug tasks tagged with "user_concern".
 
     Modify `awesome_webapp.args` to be the following:
 
