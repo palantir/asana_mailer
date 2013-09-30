@@ -328,7 +328,8 @@ def generate_templates(project, html_template, text_template, current_date):
 
     env.autoescape = False
     plaintext = env.get_template(text_template)
-    rendered_plaintext = plaintext.render(project=project)
+    rendered_plaintext = plaintext.render(
+        project=project, current_date=current_date)
 
     return (rendered_html, rendered_plaintext)
 
