@@ -410,10 +410,10 @@ def main():
         help='show non-archived tasks completed within the last 36 hours')
     parser.add_argument(
         '-f', '--filter-tags', nargs='+', dest='tag_filters', default=[],
-        metavar='TAG', help='Tags to filter tasks on')
+        metavar='TAG', help='tags to filter tasks on')
     parser.add_argument(
         '-s', '--filter-sections', nargs='+', dest='section_filters',
-        default=[], metavar='SECTION', help='Sections to filter tasks on')
+        default=[], metavar='SECTION', help='sections to filter tasks on')
     parser.add_argument(
         '--html-template', default='Project_Styled.html',
         help='a custom template to use for the html portion')
