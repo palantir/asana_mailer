@@ -137,9 +137,9 @@ class Project(object):
         project = Project(project_json['name'], project_json['notes'])
         project.add_sections(
             Section.create_sections(project_tasks_json, task_last_comments))
-        project.filter_sections(section_filters)
-        project.filter_tasks(filters)
-        project.remove_completed_tasks(keep_completed, current_time_utc)
+        project.filter_tasks(
+            section_filters=section_filters, task_filters=filters,
+            keep_completed=keep_completed, current_time_utc=current_time_utc)
 
         return project
 
@@ -157,41 +157,42 @@ class Project(object):
         '''
         self.sections.extend(sections)
 
-    def filter_sections(self, sections_filters):
-        '''Filter out sections based on a list of filter criteria.
+    def filter_tasks(
+            self, section_filters=None, task_filters=None,
+            keep_completed=False, current_time_utc=None):
+        '''Filter out tasks based on filters based on filter criteria.
 
         :param sections_filters: A list of sections to filter the Project on
+        :param task_filters: A list of tags to filter the Project's tasks on
+        :param keep_completed: A boolean representing whether to keepcompleted
+        tasks. If True, then recently completed tasks (currently 36 hours) are
+        kept.
+        :param current_time_utc: The current time in UTC
         '''
-        if sections_filters:
+        # Section Filters
+        if section_filters:
             self.sections[:] = [
-                s for s in self.sections if s.name in sections_filters]
-
-    def filter_tasks(self, filters):
-        '''Filter out tasks based on a list of filter criteria.
-
-        :param filters: A list of tags to filter the Project's tasks on
-        '''
-        if filters:
+                s for s in self.sections if s.name in section_filters]
+        # Task (Tag) Filters
+        if task_filters:
             for section in self.sections:
                 section.tasks[:] = [
-                    task for task in section.tasks if task.tags_in(filters)]
-            self.sections[:] = [s for s in self.sections if s.tasks]
-
-    def remove_completed_tasks(self, keep_completed, current_time_utc=None):
-        '''Remove completed tasks, or tasks completed within 36 hours.
-
-        :param keep_completed: A boolean representing how to remove completed
-        tasks. If False, all completed tasks are filtered out. If True, then
-        recently completed tasks (currently 36 hours) are kept.
-        :param current_time_utc: The current time in UTC that is passed in
-        '''
+                    task for task in section.tasks
+                    if task.tags_in(task_filters)]
+        # Completed Filters
         for section in self.sections:
             if keep_completed:
-                section.tasks = [task for task in section.tasks if (
-                    task.incomplete_or_recent(current_time_utc))]
+                if current_time_utc is None:
+                    current_time_utc = datetime.datetime.now(
+                        dateutil.tz.tzutc())
+                section.tasks[:] = [
+                    task for task in section.tasks
+                    if task.incomplete_or_recent(current_time_utc)]
             else:
                 section.tasks[:] = [
                     task for task in section.tasks if not task.completed]
+        # Remove Empty Sections
+        self.sections[:] = [s for s in self.sections if s.tasks]
 
 
 class Section(object):
