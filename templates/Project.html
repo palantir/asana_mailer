@@ -7,7 +7,9 @@
     {% endblock %}
   </head>
   <body>
-    <h1>{{ project.name }} Daily Actions {{ current_date }}</h1>
+    <a href="https://app.asana.com/0/{{ project.id }}/{{ project.id }}">
+      <h1>{{ project.name }} Daily Actions {{ current_date }}</h1>
+    </a>
     {% if project.description %}
     <h4>{{ project.description }}</h4>
     {% endif %}
