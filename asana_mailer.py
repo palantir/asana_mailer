@@ -79,7 +79,8 @@ class Project(object):
     sections.
     '''
 
-    def __init__(self, name, description, sections=None):
+    def __init__(self, id, name, description, sections=None):
+        self.id = id
         self.name = name
         self.description = description
         self.sections = sections
@@ -134,7 +135,8 @@ class Project(object):
             if task_comments:
                 task_last_comments[task_id] = task_comments[-1]
 
-        project = Project(project_json['name'], project_json['notes'])
+        project = Project(
+            project_id, project_json['name'], project_json['notes'])
         project.add_sections(
             Section.create_sections(project_tasks_json, task_last_comments))
         project.filter_tasks(
