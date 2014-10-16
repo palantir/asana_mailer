@@ -29,6 +29,7 @@ import datetime
 import dateutil.parser
 import dateutil.tz
 import premailer
+import logging
 import requests
 import smtplib
 import sys
@@ -36,6 +37,26 @@ import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from jinja2 import Environment, FileSystemLoader
+
+
+def init_logging():
+    logger = logging.getLogger('asana_mailer')
+    logger.setLevel(logging.INFO)
+
+    logging_formatter = logging.formatter(
+        '%(asctime)s %(levelname)s [%(name)s]: %(message)s '
+        '[%(filename)s:%(lineno)d]')
+
+    file_handler = logging.handlers.FileHandler(
+        'asana_mailer.log', encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging_formatter)
+
+    logger.addHandler(file_handler)
+    return logger
+
+
+logger = init_logging()
 
 
 class Asana(object):
