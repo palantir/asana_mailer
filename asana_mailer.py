@@ -272,7 +272,7 @@ class Task(object):
 
     def __init__(
             self, name, assignee, completed, completion_time, description,
-            due_date, tags, task_comments):
+            due_date, tags, comments):
         self.name = name
         self.assignee = assignee
         self.completed = completed
@@ -280,11 +280,7 @@ class Task(object):
         self.description = description
         self.due_date = due_date
         self.tags = tags
-        self.task_comments = task_comments
-        if task_comments is None:
-            self.latest_comment = None
-        else:
-            self.latest_comment = task_comments[-1]
+        self.comments = comments
 
     @staticmethod
     def incomplete_or_recent_json(current_time_utc, task_json, hours):
@@ -320,6 +316,36 @@ class Task(object):
             return True
 
 
+# Filters
+
+def last_comment(task_comments):
+    if task_comments:
+        return task_comments[-1:]
+    else:
+        return None
+
+
+def most_recent_comments(task_comments, num_comments):
+    if num_comments <= 0:
+        num_comments = 1
+    elif num_comments > len(task_comments):
+        num_comments = len(task_comments)
+    if task_comments:
+        return task_comments[-num_comments:]
+    else:
+        return None
+
+
+def comments_within_lookback(task_comments, current_time_utc, hours):
+    for comment in task_comments:
+        comment_time = dateutil.parser.parse(comment[u'created_at'])
+        delta = current_time_utc - comment_time
+        if delta < datetime.timedelta(hours=hours):
+            yield comment
+        else:
+            continue
+
+
 def generate_templates(project, html_template, text_template, current_date):
     '''Generates the templates using Jinja2 templates
 
@@ -332,6 +358,10 @@ def generate_templates(project, html_template, text_template, current_date):
     env = Environment(
         loader=FileSystemLoader('templates'), trim_blocks=True,
         lstrip_blocks=True, autoescape=True)
+
+    env.filters['last_comment'] = last_comment
+    env.filters['most_recent_comments'] = most_recent_comments
+    env.filters['comments_within_lookback'] = comments_within_lookback
 
     html = env.get_template(html_template)
     rendered_html = premailer.transform(

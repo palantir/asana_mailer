@@ -27,7 +27,7 @@
     {% set task_tags = ' (%s)'|format(task.tags|join(', ')) if task.tags %}
 
     <li><span class="{{ task_name_class }}">{{ task.name }} - <span class="user">{{ task_assignee }}</span><span class="task-tags">{{ task_tags }}</span></span></li>
-      {% if task.due_date or task.description or task.latest_comment %}
+      {% if task.due_date or task.description or task.comments %}
         <ul>
           {% if task.due_date %}
           <li><span class="task-attribute">Due Date:</span> <span class="due-date">{{ task.due_date }}</span></li>

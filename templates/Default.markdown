@@ -1,6 +1,8 @@
 {% extends "Project.markdown" %}
 {% block comment_block %}
-{% if task.latest_comment %}
-* Last Comment: {{ task.latest_comment.text }} - {{ task.latest_comment.created_by.name }}
+{% if task.comments %}
+  {% for comment in task.comments|last_comment %}
+  * Last Comment: {{ comment.text }} - {{ comment.created_by.name }}
+  {% endfor %}
 {% endif %}
 {% endblock %}

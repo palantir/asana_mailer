@@ -8,7 +8,7 @@
 {% for section in project.sections %}
 ## {{ section.name }}
 {% for task in section.tasks %}
-* {{ '[DONE]: ' if task.completed }}{{ task.name }} - {{ task.assignee if task.assignee else 'Unassigned' }} {{ ' (%s)'|format(task.tags|join(', ')) if task.tags }}
+* {{ '[DONE]: ' if task.completed }}{{ task.name }} - {{ task.assignee if task.assignee else 'Unassigned' }}{{ ' (%s)'|format(task.tags|join(', ')) if task.tags }}
   {% if task.due_date %}
   * Due Date: {{ task.due_date }}
   {% endif %}
