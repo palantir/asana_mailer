@@ -65,9 +65,10 @@ files. Here's an example for an evolving project:
 
         30 13 * * 1-5 python asana_mailer.py @awesome_webapp.args > /dev/null 2>&1
 
-2. Alright, so I want to keep recently completed tasks for those who are going
-   to receive the emails but aren't attending the standup, and I'd also like to
-   filter out all tasks except user visible bug tasks tagged with "user_concern".
+2. Alright, so I want to keep recently completed tasks (within the last 36
+   hours below) for those who are going to receive the emails but aren't
+   attending the standup, and I'd also like to filter out all tasks except user
+   visible bug tasks tagged with "user_concern".
 
     Modify `awesome_webapp.args` to be the following:
 
@@ -78,6 +79,7 @@ files. Here's an example for an evolving project:
         -f [Filter by tag]
         user_concern [Name of the tag]
         -c [Keep recently completed tasks]
+        36
         --to-addresses
         Example Distribution List <example_list@example.com>
         --from-address
@@ -98,6 +100,7 @@ files. Here's an example for an evolving project:
         -f
         user_concern
         -c
+        36
         --to-addresses
         Example Distribution List <example_list@example.com>
         --cc-addresses
@@ -121,8 +124,8 @@ template for use with your project.
 
 ## Usage
 
-    $ python asana_mailer.py -h
-    usage: asana_mailer.py [-h] [-c] [-f TAG [TAG ...]] [-s SECTION [SECTION ...]]
+    usage: asana_mailer.py [-h] [-c HOURS] [-f TAG [TAG ...]]
+                          [-s SECTION [SECTION ...]]
                           [--html-template HTML_TEMPLATE]
                           [--text-template TEXT_TEMPLATE]
                           [--to-addresses ADDRESS [ADDRESS ...]]
@@ -138,8 +141,9 @@ template for use with your project.
 
     optional arguments:
       -h, --help            show this help message and exit
-      -c, --completed       show non-archived tasks completed within the last 36
-                            hours
+      -c HOURS, --completed HOURS
+                            show non-archived tasks completed within the past
+                            hours specified
       -f TAG [TAG ...], --filter-tags TAG [TAG ...]
                             tags to filter tasks on
       -s SECTION [SECTION ...], --filter-sections SECTION [SECTION ...]
@@ -177,6 +181,6 @@ template for use with your project.
 >WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 >See the License for the specific language governing permissions and
 >limitations under the License.
-    
+
 ### Questions?
 Feel free to [file an issue](https://github.com/palantir/asana_mailer/issues/new).
