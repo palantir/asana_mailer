@@ -425,7 +425,7 @@ def generate_templates(
 
 
 def send_email(
-        project, from_address, to_addresses, cc_addresses,
+        project, mail_server, from_address, to_addresses, cc_addresses,
         rendered_html, rendered_text, current_date):
     '''Sends an email using a Project and rendered templates.
 
@@ -437,6 +437,7 @@ def send_email(
     :param rendered_text: The rendered text template
     :param current_date: The current date
     '''
+
     to_address_str = ', '.join(to_addresses)
     if cc_addresses:
         cc_address_str = ', '.join(cc_addresses)
@@ -463,8 +464,8 @@ def send_email(
         to_addresses.extend(cc_addresses)
 
     try:
-        log.info('Connecting to SMTP Server')
-        smtp_conn = smtplib.SMTP('localhost', timeout=300)
+        log.info('Connecting to SMTP Server: {0}'.format(mail_server))
+        smtp_conn = smtplib.SMTP(mail_server, timeout=300)
         log.info('Sending Email')
         smtp_conn.sendmail(from_address, to_addresses, message.as_string())
         smtp_conn.quit()
@@ -526,6 +527,10 @@ def main():
     email_group = parser.add_argument_group(
         'email', 'arguments for sending emails')
     email_group.add_argument(
+        '--mail-server', metavar='HOSTNAME', default='localhost',
+        help='the hostname of the mail server to send email from '
+        '(default: localhost)')
+    email_group.add_argument(
         '--to-addresses', nargs='+', metavar='ADDRESS',
         help="the 'To:' addresses for the outgoing email")
     email_group.add_argument(
@@ -557,8 +562,8 @@ def main():
 
     if args.to_addresses and args.from_address:
         send_email(
-            project, args.from_address, args.to_addresses, args.cc_addresses,
-            rendered_html, rendered_text, current_date)
+            project, args.mail_server, args.from_address, args.to_addresses,
+            args.cc_addresses, rendered_html, rendered_text, current_date)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
     log.info('Finished')
