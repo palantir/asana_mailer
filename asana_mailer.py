@@ -90,7 +90,7 @@ class Project(object):
     @staticmethod
     def create_project(
             asana, project_id, filters=None, section_filters=None,
-            keep_completed=False):
+            completed_lookback_hours=None):
         '''Creates a Project utilizing data from Asana.
 
         Using filters, a project attempts to optimize the calls it makes to
@@ -102,8 +102,8 @@ class Project(object):
         :param project_id: The Asana Project ID
         :param filters: A list of tag filters for filtering out tasks
         :param section_filters: A list of sections to filter out tasks
-        :param keep_completed: A boolean representing whether to store
-        recently completed tasks
+        :param completed_lookback_hours: An amount in hours to look back for
+        completed tasks
         :return: The newly created Project instance
         '''
         current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
@@ -122,10 +122,11 @@ class Project(object):
             # Optimize calls to API
             if filters and not tag_names >= filters:
                 continue
-            elif keep_completed and not Task.incomplete_or_recent_json(
-                    current_time_utc, task):
+            elif (completed_lookback_hours is not None and not
+                    Task.incomplete_or_recent_json(
+                        current_time_utc, task, completed_lookback_hours)):
                 continue
-            elif not keep_completed and task['completed']:
+            elif completed_lookback_hours is None and task['completed']:
                 continue
             task_id = unicode(task['id'])
             task_stories = asana.api_call('task_stories', task_id=task_id)
@@ -141,7 +142,8 @@ class Project(object):
             Section.create_sections(project_tasks_json, task_last_comments))
         project.filter_tasks(
             section_filters=section_filters, task_filters=filters,
-            keep_completed=keep_completed, current_time_utc=current_time_utc)
+            completed_lookback_hours=completed_lookback_hours,
+            current_time_utc=current_time_utc)
 
         return project
 
@@ -161,14 +163,13 @@ class Project(object):
 
     def filter_tasks(
             self, section_filters=None, task_filters=None,
-            keep_completed=False, current_time_utc=None):
+            completed_lookback_hours=None, current_time_utc=None):
         '''Filter out tasks based on filters based on filter criteria.
 
         :param sections_filters: A list of sections to filter the Project on
         :param task_filters: A list of tags to filter the Project's tasks on
-        :param keep_completed: A boolean representing whether to keepcompleted
-        tasks. If True, then recently completed tasks (currently 36 hours) are
-        kept.
+        :param completed_lookback_hours: An amount in hours to look back for
+        completed tasks. If None, no completed tasks are filtered out.
         :param current_time_utc: The current time in UTC
         '''
         # Section Filters
@@ -183,13 +184,14 @@ class Project(object):
                     if task.tags_in(task_filters)]
         # Completed Filters
         for section in self.sections:
-            if keep_completed:
+            if completed_lookback_hours is not None:
                 if current_time_utc is None:
                     current_time_utc = datetime.datetime.now(
                         dateutil.tz.tzutc())
                 section.tasks[:] = [
                     task for task in section.tasks
-                    if task.incomplete_or_recent(current_time_utc)]
+                    if task.incomplete_or_recent(
+                        current_time_utc, completed_lookback_hours)]
             else:
                 section.tasks[:] = [
                     task for task in section.tasks if not task.completed]
@@ -281,17 +283,18 @@ class Task(object):
         self.latest_comment = latest_comment
 
     @staticmethod
-    def incomplete_or_recent_json(current_time_utc, task_json):
+    def incomplete_or_recent_json(current_time_utc, task_json, hours):
         '''Returns whether a task's JSON is incomplete or recently completed.
 
         :param current_time_utc: The current time in UTC
         :param task_json: The JSON representing an Asana task from Asana's API
+        :param hours: The lookback time in hours to filter completed tasks on.
         '''
         if task_json['completed']:
             task_completion_time = dateutil.parser.parse(
                 task_json['completed_at'])
             delta = current_time_utc - task_completion_time
-            return delta < datetime.timedelta(hours=36)
+            return delta < datetime.timedelta(hours=hours)
         else:
             return True
 
@@ -300,14 +303,15 @@ class Task(object):
         task_tag_set = frozenset(self.tags)
         return task_tag_set >= tag_filter_set
 
-    def incomplete_or_recent(self, current_time_utc):
+    def incomplete_or_recent(self, current_time_utc, hours):
         '''Returns whether a task's is incomplete or recently completed.
 
         :param current_time_utc: The current time in UTC
+        :param hours: The lookback time in hours to filter completed tasks on.
         '''
         if self.completed:
             delta = current_time_utc - self.completion_time
-            return delta < datetime.timedelta(hours=36)
+            return delta < datetime.timedelta(hours=hours)
         else:
             return True
 
@@ -409,8 +413,10 @@ def main():
     parser.add_argument('project_id', help='the asana project id')
     parser.add_argument('api_key', help='your asana api key')
     parser.add_argument(
-        '-c', '--completed', action='store_true', dest='keep_completed',
-        help='show non-archived tasks completed within the last 36 hours')
+        '-c', '--completed', type=int, dest='completed_lookback_hours',
+        metavar='HOURS',
+        help='show non-archived tasks completed within the past hours '
+        'specified')
     parser.add_argument(
         '-f', '--filter-tags', nargs='+', dest='tag_filters', default=[],
         metavar='TAG', help='tags to filter tasks on')
@@ -448,7 +454,7 @@ def main():
     project = Project.create_project(
         asana, args.project_id, filters=filters,
         section_filters=section_filters,
-        keep_completed=args.keep_completed)
+        completed_lookback_hours=args.completed_lookback_hours)
     current_date = str(datetime.date.today())
     rendered_html, rendered_text = generate_templates(
         project, args.html_template, args.text_template, current_date)
