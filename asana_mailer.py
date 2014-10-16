@@ -110,7 +110,7 @@ class Project(object):
         project_json = asana.api_call('project', project_id=project_id)
         project_tasks_json = asana.api_call(
             'project_tasks', project_id=project_id)
-        task_last_comments = {}
+        task_comments = {}
 
         current_section = None
         for task in project_tasks_json:
@@ -130,16 +130,16 @@ class Project(object):
                 continue
             task_id = unicode(task['id'])
             task_stories = asana.api_call('task_stories', task_id=task_id)
-            task_comments = [
+            current_task_comments = [
                 story for story in task_stories if
                 story['type'] == 'comment']
-            if task_comments:
-                task_last_comments[task_id] = task_comments[-1]
+            if current_task_comments:
+                task_comments[task_id] = current_task_comments
 
         project = Project(
             project_id, project_json['name'], project_json['notes'])
         project.add_sections(
-            Section.create_sections(project_tasks_json, task_last_comments))
+            Section.create_sections(project_tasks_json, task_comments))
         project.filter_tasks(
             section_filters=section_filters, task_filters=filters,
             completed_lookback_hours=completed_lookback_hours,
@@ -209,7 +209,7 @@ class Section(object):
             self.tasks = []
 
     @staticmethod
-    def create_sections(project_tasks_json, task_last_comments):
+    def create_sections(project_tasks_json, task_comments):
         '''Creates sections from task and story JSON from Asana's API.
 
         :param project_tasks_json: The JSON object for a Project's tasks in
@@ -241,10 +241,10 @@ class Section(object):
                 description = task['notes'] if task['notes'] else None
                 due_date = task['due_on']
                 tags = [tag['name'] for tag in task['tags']]
-                latest_comment = task_last_comments.get(task_id)
+                current_task_comments = task_comments.get(task_id)
                 current_task = Task(
                     name, assignee, completed, completion_time, description,
-                    due_date, tags, latest_comment)
+                    due_date, tags, current_task_comments)
                 current_section.add_task(current_task)
         if current_section.tasks:
             sections.append(current_section)
@@ -272,7 +272,7 @@ class Task(object):
 
     def __init__(
             self, name, assignee, completed, completion_time, description,
-            due_date, tags, latest_comment):
+            due_date, tags, task_comments):
         self.name = name
         self.assignee = assignee
         self.completed = completed
@@ -280,7 +280,11 @@ class Task(object):
         self.description = description
         self.due_date = due_date
         self.tags = tags
-        self.latest_comment = latest_comment
+        self.task_comments = task_comments
+        if task_comments is None:
+            self.latest_comment = None
+        else:
+            self.latest_comment = task_comments[-1]
 
     @staticmethod
     def incomplete_or_recent_json(current_time_utc, task_json, hours):
