@@ -495,7 +495,7 @@ def main():
     asana = Asana(args.api_key)
     filters = frozenset((unicode(filter) for filter in args.tag_filters))
     section_filters = frozenset(
-        (unicode(section) for section in args.section_filters))
+        (unicode(section + ':') for section in args.section_filters))
     current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
     project = Project.create_project(
         asana, args.project_id, current_time_utc, filters=filters,
