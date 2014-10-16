@@ -32,7 +32,6 @@ import premailer
 import logging
 import requests
 import smtplib
-import sys
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -40,23 +39,22 @@ from jinja2 import Environment, FileSystemLoader
 
 
 def init_logging():
-    logger = logging.getLogger('asana_mailer')
-    logger.setLevel(logging.INFO)
+    log = logging.getLogger('asana_mailer')
+    log.setLevel(logging.INFO)
 
-    logging_formatter = logging.formatter(
+    logging_formatter = logging.Formatter(
         '%(asctime)s %(levelname)s [%(name)s]: %(message)s '
         '[%(filename)s:%(lineno)d]')
 
-    file_handler = logging.handlers.FileHandler(
-        'asana_mailer.log', encoding='utf-8')
+    file_handler = logging.FileHandler('asana_mailer.log', encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging_formatter)
 
-    logger.addHandler(file_handler)
-    return logger
+    log.addHandler(file_handler)
+    return log
 
 
-logger = init_logging()
+log = init_logging()
 
 
 class Asana(object):
@@ -86,6 +84,7 @@ class Asana(object):
             self.__class__, '{0}_endpoint'.format(endpoint_name))
         url = '{0}{1}'.format(
             self.__class__.asana_api_url, endpoint.format(**kwargs))
+        log.info('Making API Call to {0}'.format(url))
         response = requests.get(url, auth=(self.api_key, ''))
         if response.status_code == requests.codes.ok:
             return response.json()['data']
@@ -127,12 +126,15 @@ class Project(object):
         completed tasks
         :return: The newly created Project instance
         '''
+        log.info('Creating project object from Asana Project {0}'.format(
+            project_id))
         project_json = asana.api_call('project', project_id=project_id)
         project_tasks_json = asana.api_call(
             'project_tasks', project_id=project_id)
         task_comments = {}
 
         current_section = None
+        log.info('Starting API Calls for Task Comments')
         for task in project_tasks_json:
             if task['name'].endswith(':'):
                 current_section = task['name']
@@ -149,6 +151,7 @@ class Project(object):
             elif completed_lookback_hours is None and task['completed']:
                 continue
             task_id = unicode(task['id'])
+            log.info('Getting task comments for task: {0}'.format(task_id))
             task_stories = asana.api_call('task_stories', task_id=task_id)
             current_task_comments = [
                 story for story in task_stories if
@@ -158,8 +161,10 @@ class Project(object):
 
         project = Project(
             project_id, project_json['name'], project_json['notes'])
+        log.info('Separating Tasks into Sections')
         project.add_sections(
             Section.create_sections(project_tasks_json, task_comments))
+        log.info('Starting task filtering')
         project.filter_tasks(
             current_time_utc, section_filters=section_filters,
             task_filters=filters,
@@ -194,15 +199,23 @@ class Project(object):
         '''
         # Section Filters
         if section_filters:
+            log.info('Filtering sections by section filters: ({0})'.format(
+                ','.join(section_filters)))
             self.sections[:] = [
                 s for s in self.sections if s.name in section_filters]
         # Task (Tag) Filters
         if task_filters:
+            log.info('Filtering tasks by tag filters: {0}'.format(
+                task_filters))
             for section in self.sections:
                 section.tasks[:] = [
                     task for task in section.tasks
                     if task.tags_in(task_filters)]
         # Completed Filters
+        if completed_lookback_hours is not None:
+            log.info(
+                'Retaining tasks completed within the last {0} hours'.format(
+                    completed_lookback_hours))
         for section in self.sections:
             if completed_lookback_hours is not None:
                 section.tasks[:] = [
@@ -213,6 +226,7 @@ class Project(object):
                 section.tasks[:] = [
                     task for task in section.tasks if not task.completed]
         # Remove Empty Sections
+        log.info('Removing empty sections')
         self.sections[:] = [s for s in self.sections if s.tasks]
 
 
@@ -266,6 +280,7 @@ class Section(object):
         if current_section.tasks:
             sections.append(current_section)
         if misc_section.tasks and current_section != misc_section:
+            log.info("Some tasks weren't in a section, adding Misc Section")
             sections.append(misc_section)
         return sections
 
@@ -393,11 +408,13 @@ def generate_templates(
     env.filters['comments_within_lookback'] = comments_within_lookback
     env.filters['as_date'] = as_date
 
+    log.info('Rendering HTML Template')
     html = env.get_template(html_template)
     rendered_html = premailer.transform(html.render(
         project=project, current_date=current_date,
         current_time_utc=current_time_utc))
 
+    log.info('Rendering Text Template')
     env.autoescape = False
     plaintext = env.get_template(text_template)
     rendered_plaintext = plaintext.render(
@@ -420,13 +437,21 @@ def send_email(
     :param rendered_text: The rendered text template
     :param current_date: The current date
     '''
+    to_address_str = ', '.join(to_addresses)
+    if cc_addresses:
+        cc_address_str = ', '.join(cc_addresses)
+    else:
+        cc_address_str = ''
+
+    log.info('Preparing Email - From: ({0}) To: ({1}) Cc: ({2})'.format(
+        from_address, to_address_str, cc_address_str))
     message = MIMEMultipart('alternative')
     message['Subject'] = '{0} Daily Mailer {1}'.format(
         project.name, current_date)
     message['From'] = from_address
-    message['To'] = ', '.join(to_addresses)
+    message['To'] = to_address_str
     if cc_addresses:
-        message['Cc'] = ', '.join(cc_addresses)
+        message['Cc'] = cc_address_str
 
     text_part = MIMEText(rendered_text.encode('utf-8'), 'plain')
     html_part = MIMEText(rendered_html.encode('utf-8'), 'html')
@@ -438,12 +463,13 @@ def send_email(
         to_addresses.extend(cc_addresses)
 
     try:
+        log.info('Connecting to SMTP Server')
         smtp_conn = smtplib.SMTP('localhost', timeout=300)
+        log.info('Sending Email')
         smtp_conn.sendmail(from_address, to_addresses, message.as_string())
         smtp_conn.quit()
-    except smtplib.SMTPException as ex:
-        print >> sys.stderr, 'WARNING: Email could not be sent:'
-        print >> sys.stderr, ex
+    except smtplib.SMTPException:
+        log.exception('Email could not be sent!')
 
 
 def write_rendered_files(rendered_html, rendered_text, current_date):
@@ -458,10 +484,12 @@ def write_rendered_files(rendered_html, rendered_text, current_date):
     with codecs.open(
             'AsanaMailer_{0}.html'.format(current_date), 'w', 'utf-8') as (
             html_file):
+        log.info('Writing HTML File')
         html_file.write(rendered_html)
     with codecs.open(
             'AsanaMailer_{0}.markdown'.format(current_date), 'w', 'utf-8') as (
             markdown_file):
+        log.info('Writing Text File')
         markdown_file.write(rendered_text)
 
 
@@ -518,11 +546,11 @@ def main():
     section_filters = frozenset(
         (unicode(section + ':') for section in args.section_filters))
     current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
+    current_date = str(datetime.date.today())
     project = Project.create_project(
         asana, args.project_id, current_time_utc, filters=filters,
         section_filters=section_filters,
         completed_lookback_hours=args.completed_lookback_hours)
-    current_date = str(datetime.date.today())
     rendered_html, rendered_text = generate_templates(
         project, args.html_template, args.text_template, current_date,
         current_time_utc)
@@ -533,6 +561,7 @@ def main():
             rendered_html, rendered_text, current_date)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
+    log.info('Finished')
 
 
 if __name__ == '__main__':
