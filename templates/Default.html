@@ -1,0 +1,6 @@
+{% extends "Project_Styled.html" %}
+{% block comment_block %}
+{% if task.latest_comment %}
+<li><span class="task-attribute">Last Comment:</span> <span class="comment">{{ task.latest_comment.text }} - <span class="user">{{ task.latest_comment.created_by.name }}</span></span></li>
+{% endif %}
+{% endblock %}

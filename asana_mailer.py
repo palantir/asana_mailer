@@ -424,10 +424,10 @@ def main():
         '-s', '--filter-sections', nargs='+', dest='section_filters',
         default=[], metavar='SECTION', help='sections to filter tasks on')
     parser.add_argument(
-        '--html-template', default='Project_Styled.html',
+        '--html-template', default='Default.html',
         help='a custom template to use for the html portion')
     parser.add_argument(
-        '--text-template', default='Project.markdown',
+        '--text-template', default='Default.markdown',
         help='a custom template to use for the plaintext portion')
     email_group = parser.add_argument_group(
         'email', 'arguments for sending emails')

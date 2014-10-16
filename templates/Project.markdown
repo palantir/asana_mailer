@@ -12,9 +12,8 @@
   {% if task.due_date %}
   * Due Date: {{ task.due_date }}
   {% endif %}
-  {% if task.latest_comment %}
-  * Last Comment: {{ task.latest_comment.text }} - {{ task.latest_comment.created_by.name }}
-  {% endif %}
+  {% block comment_block scoped %}
+  {% endblock %}
   {% if task.description %}
   * Description:
 
