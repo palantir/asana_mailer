@@ -89,8 +89,8 @@ class Project(object):
 
     @staticmethod
     def create_project(
-            asana, project_id, filters=None, section_filters=None,
-            completed_lookback_hours=None):
+            asana, project_id, current_time_utc, filters=None,
+            section_filters=None, completed_lookback_hours=None):
         '''Creates a Project utilizing data from Asana.
 
         Using filters, a project attempts to optimize the calls it makes to
@@ -106,7 +106,6 @@ class Project(object):
         completed tasks
         :return: The newly created Project instance
         '''
-        current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
         project_json = asana.api_call('project', project_id=project_id)
         project_tasks_json = asana.api_call(
             'project_tasks', project_id=project_id)
@@ -141,9 +140,9 @@ class Project(object):
         project.add_sections(
             Section.create_sections(project_tasks_json, task_comments))
         project.filter_tasks(
-            section_filters=section_filters, task_filters=filters,
-            completed_lookback_hours=completed_lookback_hours,
-            current_time_utc=current_time_utc)
+            current_time_utc, section_filters=section_filters,
+            task_filters=filters,
+            completed_lookback_hours=completed_lookback_hours)
 
         return project
 
@@ -162,8 +161,8 @@ class Project(object):
         self.sections.extend(sections)
 
     def filter_tasks(
-            self, section_filters=None, task_filters=None,
-            completed_lookback_hours=None, current_time_utc=None):
+            self, current_time_utc, section_filters=None, task_filters=None,
+            completed_lookback_hours=None):
         '''Filter out tasks based on filters based on filter criteria.
 
         :param sections_filters: A list of sections to filter the Project on
@@ -185,9 +184,6 @@ class Project(object):
         # Completed Filters
         for section in self.sections:
             if completed_lookback_hours is not None:
-                if current_time_utc is None:
-                    current_time_utc = datetime.datetime.now(
-                        dateutil.tz.tzutc())
                 section.tasks[:] = [
                     task for task in section.tasks
                     if task.incomplete_or_recent(
@@ -322,7 +318,7 @@ def last_comment(task_comments):
     if task_comments:
         return task_comments[-1:]
     else:
-        return None
+        return []
 
 
 def most_recent_comments(task_comments, num_comments):
@@ -333,20 +329,32 @@ def most_recent_comments(task_comments, num_comments):
     if task_comments:
         return task_comments[-num_comments:]
     else:
-        return None
+        return []
 
 
 def comments_within_lookback(task_comments, current_time_utc, hours):
+    filtered_comments = []
     for comment in task_comments:
         comment_time = dateutil.parser.parse(comment[u'created_at'])
         delta = current_time_utc - comment_time
         if delta < datetime.timedelta(hours=hours):
-            yield comment
-        else:
-            continue
+            filtered_comments.append(comment)
+    if not filtered_comments and task_comments:
+        filtered_comments.append(task_comments[-1])
+    return filtered_comments
 
 
-def generate_templates(project, html_template, text_template, current_date):
+def as_date(datetime_str):
+    try:
+        parsed_date = dateutil.parser.parse(datetime_str).date().isoformat()
+    except:
+        return datetime_str
+    else:
+        return parsed_date
+
+
+def generate_templates(
+        project, html_template, text_template, current_date, current_time_utc):
     '''Generates the templates using Jinja2 templates
 
     :param html_template: The filename of the HTML template in the templates
@@ -362,15 +370,18 @@ def generate_templates(project, html_template, text_template, current_date):
     env.filters['last_comment'] = last_comment
     env.filters['most_recent_comments'] = most_recent_comments
     env.filters['comments_within_lookback'] = comments_within_lookback
+    env.filters['as_date'] = as_date
 
     html = env.get_template(html_template)
-    rendered_html = premailer.transform(
-        html.render(project=project, current_date=current_date))
+    rendered_html = premailer.transform(html.render(
+        project=project, current_date=current_date,
+        current_time_utc=current_time_utc))
 
     env.autoescape = False
     plaintext = env.get_template(text_template)
     rendered_plaintext = plaintext.render(
-        project=project, current_date=current_date)
+        project=project, current_date=current_date,
+        current_time_utc=current_time_utc)
 
     return (rendered_html, rendered_plaintext)
 
@@ -485,13 +496,15 @@ def main():
     filters = frozenset((unicode(filter) for filter in args.tag_filters))
     section_filters = frozenset(
         (unicode(section) for section in args.section_filters))
+    current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
     project = Project.create_project(
-        asana, args.project_id, filters=filters,
+        asana, args.project_id, current_time_utc, filters=filters,
         section_filters=section_filters,
         completed_lookback_hours=args.completed_lookback_hours)
     current_date = str(datetime.date.today())
     rendered_html, rendered_text = generate_templates(
-        project, args.html_template, args.text_template, current_date)
+        project, args.html_template, args.text_template, current_date,
+        current_time_utc)
 
     if args.to_addresses and args.from_address:
         send_email(
