@@ -1,0 +1,12 @@
+{% extends "Project_Styled.html" %}
+{% block comment_block %}
+{% if task.comments %}
+  <li><span class="task-attribute">Comments:</span></br>
+    <blockquote>
+  {% for comment in task.comments|reverse %}
+      <p><span class="comment">{{ comment.text }} - <span class="user">{{ comment.created_by.name }} ({{ comment.created_at|as_date }})</span></span></p>
+  {% endfor %}
+    </blockquote>
+  </li>
+{% endif %}
+{% endblock %}
