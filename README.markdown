@@ -128,6 +128,7 @@ template for use with your project.
                           [-s SECTION [SECTION ...]]
                           [--html-template HTML_TEMPLATE]
                           [--text-template TEXT_TEMPLATE]
+                          [--mail-server HOSTNAME]
                           [--to-addresses ADDRESS [ADDRESS ...]]
                           [--cc-addresses ADDRESS [ADDRESS ...]]
                           [--from-address ADDRESS]
@@ -156,6 +157,9 @@ template for use with your project.
     email:
       arguments for sending emails
 
+      --mail-server HOSTNAME
+                            the hostname of the mail server to send email from
+                            (default: localhost)
       --to-addresses ADDRESS [ADDRESS ...]
                             the 'To:' addresses for the outgoing email
       --cc-addresses ADDRESS [ADDRESS ...]
