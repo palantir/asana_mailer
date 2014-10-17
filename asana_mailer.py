@@ -429,7 +429,8 @@ def send_email(
         rendered_html, rendered_text, current_date):
     '''Sends an email using a Project and rendered templates.
 
-    :param: The Project instance for this email
+    :param project: The Project instance for this email
+    :param mail_server: The hostname of the SMTP server to send mail from
     :param from_address: The From: Address for the email to send
     :param to_addresses: The list of To: addresses for the email to be sent to
     :param cc_addresses: The list of Cc: addresses for the email to be sent to
