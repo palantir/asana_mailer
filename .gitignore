@@ -1,5 +1,7 @@
 # Asana Mailer Specifics
 *.log
+AsanaMailer_*.html
+AsanaMailer_*.markdown
 
 # Python Files (Non-Source)
 *.py[cod]
