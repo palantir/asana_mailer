@@ -21,7 +21,120 @@ class ProjectTestCase(unittest.TestCase):
 
 
 class SectionTestCase(unittest.TestCase):
-    pass
+
+    @classmethod
+    def setup_class(cls):
+        cls.section = asana_mailer.Section('Class Test Section')
+        cls.tasks = [
+            asana_mailer.Task(
+                'Task #{}'.format(i), 'test_assignee', False, None,
+                'test_description', None, [], [])
+            for i in xrange(5)]
+
+    def test_init(self):
+        new_section = asana_mailer.Section('Test Section')
+        self.assertEqual(new_section.name, 'Test Section')
+        self.assertEqual(new_section.tasks, [])
+        new_section = asana_mailer.Section('Test Section', [1, 2, 3])
+        self.assertEqual(new_section.name, 'Test Section')
+        self.assertEqual(new_section.tasks, [1, 2, 3])
+
+    def test_create_sections(self):
+        now = datetime.datetime.now().isoformat()
+        project_tasks_json = [
+            {'id': u'123', u'name': u'Test Section:'},
+            {
+                u'id': u'321', u'name': u'Do Work',
+                u'assignee': {'name': 'test_user'},
+                u'completed': True,
+                u'completed_at': now,
+                u'notes': u'test_description',
+                u'due_on': now,
+                u'tags': [{u'name': u'Tag #{}'.format(i)} for i in xrange(5)]
+            },
+            {
+                u'id': u'456', u'name': u'More Work',
+                u'assignee': None,
+                u'completed': False,
+                u'notes': u'more_test_description',
+                u'due_on': None,
+                u'tags': []
+            },
+        ]
+        task_comments = {
+            u'123': [u'blah', u'blah2'],
+            u'321': [u'blah', u'blah3']
+        }
+        sections = asana_mailer.Section.create_sections(
+            project_tasks_json, task_comments)
+        self.assertEquals(len(sections), 1)
+        self.assertEquals(sections[0].name, u'Test Section:')
+        self.assertEquals(len(sections[0].tasks), 2)
+        first_task = sections[0].tasks[0]
+        self.assertEquals(first_task.name, u'Do Work')
+        self.assertEquals(first_task.assignee, u'test_user')
+        self.assertEquals(first_task.completed, True)
+        self.assertEquals(
+            first_task.completion_time, dateutil.parser.parse(now))
+        self.assertEquals(first_task.description, u'test_description')
+        self.assertEquals(first_task.due_date, now)
+        self.assertEquals(first_task.comments, [u'blah', u'blah3'])
+        self.assertEquals(
+            first_task.tags, [u'Tag #{}'.format(i) for i in xrange(5)])
+        second_task = sections[0].tasks[1]
+        self.assertIsNone(second_task.assignee)
+        self.assertEquals(second_task.name, u'More Work')
+        self.assertFalse(second_task.completed)
+        self.assertIsNone(second_task.completion_time)
+        self.assertEquals(second_task.description, u'more_test_description')
+        self.assertIsNone(second_task.due_date)
+        self.assertEquals(second_task.tags, [])
+
+        project_tasks_json.append(
+            {u'id': u'654', u'name': u'Section With No Tasks:'})
+        sections = asana_mailer.Section.create_sections(
+            project_tasks_json, task_comments)
+        self.assertEquals(len(sections), 1)
+        self.assertEquals(len(sections[0].tasks), 2)
+
+        project_tasks_json.insert(
+            0,
+            {
+                u'id': u'789', u'name': u'Misc Task', u'assignee': None,
+                u'completed': False, u'notes': None, u'due_on': None,
+                u'tags': []
+            }
+        )
+        sections = asana_mailer.Section.create_sections(
+            project_tasks_json, task_comments)
+        print [s.name for s in sections]
+        self.assertEquals(len(sections), 2)
+        self.assertEquals(sections[-1].name, u'Misc:')
+        self.assertEquals(len(sections[-1].tasks), 1)
+        misc_task = sections[-1].tasks[0]
+        self.assertEquals(misc_task.name, u'Misc Task')
+        self.assertIsNone(misc_task.assignee)
+        self.assertFalse(misc_task.completed)
+        self.assertIsNone(misc_task.description)
+        self.assertIsNone(misc_task.due_date)
+        self.assertEquals(misc_task.tags, [])
+
+    def test_add_task(self):
+        new_section = asana_mailer.Section('Test Section')
+        new_section.add_task('test')
+        self.assertNotIn('test', new_section.tasks)
+        new_section.add_task(type(self).tasks[0])
+        self.assertIn(type(self).tasks[0], new_section.tasks)
+
+    def test_add_tasks(self):
+        new_section = asana_mailer.Section('Test Section')
+        new_section.add_tasks(type(self).tasks)
+        self.assertEquals(type(self).tasks, new_section.tasks)
+        new_section.tasks = []
+        list_with_non_tasks = [1, 2, 3]
+        list_with_non_tasks.extend(type(self).tasks)
+        new_section.add_tasks(list_with_non_tasks)
+        self.assertEquals(type(self).tasks, new_section.tasks)
 
 
 class FiltersTestCase(unittest.TestCase):

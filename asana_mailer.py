@@ -250,11 +250,12 @@ class Section(object):
         tasks in the tasks JSON
         '''
         sections = []
-        misc_section = Section(u'Misc')
+        misc_section = Section(u'Misc:')
         current_section = misc_section
         for task in project_tasks_json:
             if task['name'].endswith(':'):
-                if current_section.tasks and current_section.name != u'Misc':
+                if current_section.tasks and current_section.name != u'Misc:':
+                    print current_section.name
                     sections.append(current_section)
                 current_section = Section(task['name'])
             else:
@@ -290,14 +291,15 @@ class Section(object):
 
         :param task: The task to add to the Section's list of tasks
         '''
-        self.tasks.append(task)
+        if isinstance(task, Task):
+            self.tasks.append(task)
 
     def add_tasks(self, tasks):
         '''Extend the Section's list of tasks with a new list of tasks.
 
         :param tasks: The list of tasks to extend the Section's list of tasks.
         '''
-        self.tasks.extend(tasks)
+        self.tasks.extend((task for task in tasks if isinstance(task, Task)))
 
 
 class Task(object):
