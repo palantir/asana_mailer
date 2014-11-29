@@ -82,9 +82,9 @@ class AsanaAPI(object):
         from a particular endpoint
         '''
         endpoint = getattr(
-            self.__class__, '{0}_endpoint'.format(endpoint_name))
+            type(self), '{0}_endpoint'.format(endpoint_name))
         url = '{0}{1}'.format(
-            self.__class__.asana_api_url, endpoint.format(**kwargs))
+            type(self).asana_api_url, endpoint.format(**kwargs))
         log.info('Making API Call to {0}'.format(url))
         response = requests.get(url, auth=(self.api_key, ''))
         if response.status_code == requests.codes.ok:

@@ -8,12 +8,52 @@ import unittest
 import dateutil
 import mock
 import nose
+import requests
 
 import asana_mailer
 
 
 class AsanaAPITestCase(unittest.TestCase):
-    pass
+
+    @classmethod
+    def setup_class(cls):
+        cls.api = asana_mailer.AsanaAPI('api_key')
+
+    def test_init(self):
+        self.assertEqual(type(self).api.api_key, 'api_key')
+
+    @mock.patch('requests.get')
+    def test_api_call(self, mock_requests):
+        api = type(self).api
+        mock_requests_instance = mock_requests.return_value
+        mock_requests_instance.status_code = requests.codes.ok
+        with self.assertRaises(AttributeError):
+            api.api_call('not_an_endpoint')
+        with self.assertRaises(KeyError):
+            api.api_call('project', invalid_param='invalid_arg')
+        auth = ('api_key', '')
+
+        api.api_call('project', project_id=u'123')
+        mock_requests_instance.json.assert_called_once_with()
+
+        mock_requests_instance.status_code = requests.codes.not_found
+        self.assertIsNone(api.api_call('project_tasks', project_id=u'123'))
+
+        api.api_call('task_stories', task_id=u'123')
+        mock_requests.assertHasCalls([
+            mock.call(url='{}{}'.format(
+                type(api).asana_api_url,
+                type(api).project_endpoint.format(project_id=u'123')),
+                auth=auth),
+            mock.call(url='{}{}'.format(
+                type(api).asana_api_url,
+                type(api).project_tasks_endpoint.format(project_id=u'123')),
+                auth=auth),
+            mock.call(url='{}{}'.format(
+                type(api).asana_api_url,
+                type(api).task_stories_endpoint.format(task_id=u'123')),
+                auth=auth),
+        ])
 
 
 class ProjectTestCase(unittest.TestCase):
