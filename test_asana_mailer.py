@@ -1,8 +1,27 @@
+import codecs
 import datetime
-import nose
+import glob
+import os
+import os.path
 import unittest
 
+import dateutil
+import mock
+import nose
+
 import asana_mailer
+
+
+class AsanaAPITestCase(unittest.TestCase):
+    pass
+
+
+class ProjectTestCase(unittest.TestCase):
+    pass
+
+
+class SectionTestCase(unittest.TestCase):
+    pass
 
 
 class FiltersTestCase(unittest.TestCase):
@@ -68,7 +87,7 @@ class FiltersTestCase(unittest.TestCase):
 class TaskTestCase(unittest.TestCase):
 
     @classmethod
-    def setUpClass(cls):
+    def setup_class(cls):
         now = datetime.datetime.utcnow()
         name = 'Test'
         assignee = 'TestUser'
@@ -158,7 +177,130 @@ class TaskTestCase(unittest.TestCase):
 
 
 class AsanaMailerTestCase(unittest.TestCase):
-    pass
+
+    @classmethod
+    def setup_class(cls):
+        cls.current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
+        cls.current_date = datetime.date.today()
+
+    @classmethod
+    def teardown_class(cls):
+        for fname in glob.glob('AsanaMailer_*.*'):
+            if os.path.exists(fname):
+                os.remove(fname)
+
+    @mock.patch('premailer.transform')
+    @mock.patch('asana_mailer.FileSystemLoader')
+    @mock.patch('asana_mailer.Environment')
+    def test_generate_templates(
+            self, mock_jinja_env, mock_fs_loader, mock_transform):
+        mock_fs_instance = mock_fs_loader.return_value
+        mock_env_instance = mock_jinja_env.return_value
+        mock_get_template = mock_env_instance.get_template.return_value
+        mock_get_template.render.return_value = 'template render'
+        mock_transform.return_value = 'premailer transform'
+
+        project = mock.MagicMock()
+
+        return_vals = asana_mailer.generate_templates(
+            project, 'html_template', 'text_template', type(self).current_date,
+            type(self).current_time_utc)
+        mock_jinja_env.assert_called_once_with(
+            loader=mock_fs_instance, trim_blocks=True, lstrip_blocks=True,
+            autoescape=True)
+
+        mock_env_instance.get_template.assert_has_calls(
+            [mock.call('html_template'), mock.call('text_template')],
+            any_order=True)
+        mock_fs_loader.assert_called_once_with('templates')
+        self.assertFalse(mock_env_instance.autoescape)
+
+        self.assertEquals(
+            ('premailer transform', 'template render'), return_vals)
+
+    @mock.patch('asana_mailer.MIMEText')
+    @mock.patch('asana_mailer.MIMEMultipart')
+    @mock.patch('smtplib.SMTP')
+    def test_send_email(self, mock_smtp, mock_mime_multipart, mock_mime_text):
+        project = mock.MagicMock()
+        project.name = 'Test Project'
+        from_address = 'test@example.com'
+        to_addresses = ['test2@example.com', 'test3@example.com']
+        cc_addresses = ['test4@example.com', 'test5@example.com']
+        combined_addresses = to_addresses + cc_addresses
+
+        smtp_mock_instance = mock_smtp.return_value
+        multipart_mock_instance = mock_mime_multipart.return_value
+        text_mock_instance = mock_mime_text.return_value
+
+        msg_dict = {}
+
+        def get_item(key):
+            return msg_dict[key]
+
+        def set_item(key, val):
+            msg_dict[key] = val
+
+        multipart_mock_instance.__getitem__.side_effect = get_item
+        multipart_mock_instance.__setitem__.side_effect = set_item
+        multipart_mock_instance.as_string.return_value = 'test message'
+
+        asana_mailer.send_email(
+            project, 'localhost', from_address, to_addresses[:],
+            cc_addresses[:], 'test_html', 'test_text', type(self).current_date)
+
+        mock_mime_multipart.assert_called_with('alternative')
+        self.assertEquals(
+            multipart_mock_instance['Subject'], '{0} Daily Mailer {1}'.format(
+                project.name, type(self).current_date))
+        self.assertEquals(multipart_mock_instance['From'], from_address)
+        self.assertEquals(
+            multipart_mock_instance['To'], ', '.join(to_addresses))
+        self.assertEquals(
+            multipart_mock_instance['Cc'], ', '.join(cc_addresses))
+
+        text_calls = [
+            mock.call('test_text'.encode('utf-8'), 'plain'),
+            mock.call('test_html'.encode('utf-8'), 'html')
+        ]
+        mock_mime_text.assert_has_calls(text_calls)
+        self.assertEquals(mock_mime_text.call_count, 2)
+        multipart_mock_instance.attach.assert_has_calls(
+            [mock.call(text_mock_instance), mock.call(text_mock_instance)],
+            any_order=True)
+        self.assertEquals(multipart_mock_instance.attach.call_count, 2)
+
+        mock_smtp.assert_called_with('localhost', timeout=300)
+        smtp_mock_instance.sendmail.assert_called_once_with(
+            from_address, combined_addresses, 'test message'
+        )
+        smtp_mock_instance.quit.assert_called_once_with()
+
+        # No Cc Addresses
+        smtp_mock_instance.sendmail.reset_mock()
+        smtp_mock_instance.quit.reset_mock()
+        asana_mailer.send_email(
+            project, 'localhost', from_address, to_addresses[:], None,
+            'test_html', 'test_text', type(self).current_date)
+
+        self.assertEquals(
+            multipart_mock_instance['To'], ', '.join(to_addresses))
+        self.assertNotIn('Cc', multipart_mock_instance)
+        smtp_mock_instance.sendmail.assert_called_once_with(
+            from_address, to_addresses, 'test message'
+        )
+        smtp_mock_instance.quit.assert_called_once_with()
+
+    def test_write_rendered_files(self):
+        today = type(self).current_date.isoformat()
+        filenames = (
+            'AsanaMailer_{0}.html'.format(today),
+            'AsanaMailer_{0}.markdown'.format(today))
+        asana_mailer.write_rendered_files('testing', 'testing', today)
+        for fname in filenames:
+            self.assertTrue(os.path.exists(fname))
+            with codecs.open(fname, 'r', 'utf-8') as fobj:
+                self.assertEqual(fobj.read(), 'testing')
 
 
 if __name__ == '__main__':

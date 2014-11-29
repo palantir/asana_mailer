@@ -26,12 +26,13 @@ Asana's REST API to generate a plaintext and HTML email using Jinja2 templates.
 import argparse
 import codecs
 import datetime
+import logging
+import smtplib
+
 import dateutil.parser
 import dateutil.tz
 import premailer
-import logging
 import requests
-import smtplib
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -57,7 +58,7 @@ def init_logging():
 log = init_logging()
 
 
-class Asana(object):
+class AsanaAPI(object):
     '''The class for making calls to Asana's REST API.
 
     The Asana class represents the infrastructure for storing a user's API key
@@ -547,7 +548,7 @@ def main():
         parser.error(
             "'To:' and 'From:' address are required for sending email")
 
-    asana = Asana(args.api_key)
+    asana = AsanaAPI(args.api_key)
     filters = frozenset((unicode(filter) for filter in args.tag_filters))
     section_filters = frozenset(
         (unicode(section + ':') for section in args.section_filters))
@@ -563,8 +564,8 @@ def main():
 
     if args.to_addresses and args.from_address:
         send_email(
-            project, args.mail_server, args.from_address, args.to_addresses,
-            args.cc_addresses, rendered_html, rendered_text, current_date)
+            project, args.mail_server, args.from_address, args.to_addresses[:],
+            args.cc_addresses[:], rendered_html, rendered_text, current_date)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
     log.info('Finished')
