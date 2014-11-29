@@ -498,14 +498,7 @@ def write_rendered_files(rendered_html, rendered_text, current_date):
         markdown_file.write(rendered_text)
 
 
-def main():
-    '''The main function for generating the mailer.
-
-    Based on the arguments, the mailer generates a Project object with its
-    appropriate Section and Tasks objects, and then renders templates
-    accordingly. This can either be written out to two files, or can be mailed
-    out using a SMTP server running on localhost.
-    '''
+def create_cli_parser():
     parser = argparse.ArgumentParser(
         description='Generates an email template for an Asana project',
         fromfile_prefix_chars='@')
@@ -544,6 +537,19 @@ def main():
         '--from-address', metavar='ADDRESS',
         help="the 'From:' address for the outgoing email")
 
+    return parser
+
+
+def main():
+    '''The main function for generating the mailer.
+
+    Based on the arguments, the mailer generates a Project object with its
+    appropriate Section and Tasks objects, and then renders templates
+    accordingly. This can either be written out to two files, or can be mailed
+    out using a SMTP server running on localhost.
+    '''
+
+    parser = create_cli_parser()
     args = parser.parse_args()
 
     if bool(args.from_address) != bool(args.to_addresses):
