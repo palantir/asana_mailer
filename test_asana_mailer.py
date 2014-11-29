@@ -3,6 +3,7 @@ import datetime
 import glob
 import os
 import os.path
+import smtplib
 import unittest
 
 import dateutil
@@ -443,6 +444,14 @@ class AsanaMailerTestCase(unittest.TestCase):
             from_address, to_addresses, 'test message'
         )
         smtp_mock_instance.quit.assert_called_once_with()
+
+        smtp_mock_instance.sendmail.side_effect = smtplib.SMTPException
+        try:
+            asana_mailer.send_email(
+                project, 'localhost', from_address, to_addresses[:], None,
+                'test_html', 'test_text', type(self).current_date)
+        except smtplib.SMTPException:
+            self.fail('asana_mailer.send_email threw an SMTPException!')
 
     def test_write_rendered_files(self):
         today = type(self).current_date.isoformat()
