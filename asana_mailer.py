@@ -26,12 +26,13 @@ Asana's REST API to generate a plaintext and HTML email using Jinja2 templates.
 import argparse
 import codecs
 import datetime
+import logging
+import smtplib
+
 import dateutil.parser
 import dateutil.tz
 import premailer
-import logging
 import requests
-import smtplib
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -57,7 +58,7 @@ def init_logging():
 log = init_logging()
 
 
-class Asana(object):
+class AsanaAPI(object):
     '''The class for making calls to Asana's REST API.
 
     The Asana class represents the infrastructure for storing a user's API key
@@ -81,13 +82,13 @@ class Asana(object):
         from a particular endpoint
         '''
         endpoint = getattr(
-            self.__class__, '{0}_endpoint'.format(endpoint_name))
+            type(self), '{0}_endpoint'.format(endpoint_name))
         url = '{0}{1}'.format(
-            self.__class__.asana_api_url, endpoint.format(**kwargs))
+            type(self).asana_api_url, endpoint.format(**kwargs))
         log.info('Making API Call to {0}'.format(url))
         response = requests.get(url, auth=(self.api_key, ''))
         if response.status_code == requests.codes.ok:
-            return response.json()['data']
+            return response.json()[u'data']
 
 
 class Project(object):
@@ -109,7 +110,7 @@ class Project(object):
 
     @staticmethod
     def create_project(
-            asana, project_id, current_time_utc, filters=None,
+            asana, project_id, current_time_utc, task_filters=None,
             section_filters=None, completed_lookback_hours=None):
         '''Creates a Project utilizing data from Asana.
 
@@ -120,7 +121,7 @@ class Project(object):
 
         :param asana: The initialized Asana object that makes API calls
         :param project_id: The Asana Project ID
-        :param filters: A list of tag filters for filtering out tasks
+        :param task_filters: A list of tag filters for filtering out tasks
         :param section_filters: A list of sections to filter out tasks
         :param completed_lookback_hours: An amount in hours to look back for
         completed tasks
@@ -136,38 +137,38 @@ class Project(object):
         current_section = None
         log.info('Starting API Calls for Task Comments')
         for task in project_tasks_json:
-            if task['name'].endswith(':'):
-                current_section = task['name']
+            if task[u'name'].endswith(':'):
+                current_section = task[u'name']
+            # Optimize calls to API
             if section_filters and current_section not in section_filters:
                 continue
-            tag_names = frozenset((tag['name'] for tag in task['tags']))
-            # Optimize calls to API
-            if filters and not tag_names >= filters:
+            tag_names = frozenset((tag[u'name'] for tag in task[u'tags']))
+            if task_filters and not tag_names >= task_filters:
                 continue
             elif (completed_lookback_hours is not None and not
                     Task.incomplete_or_recent_json(
                         current_time_utc, task, completed_lookback_hours)):
                 continue
-            elif completed_lookback_hours is None and task['completed']:
+            elif completed_lookback_hours is None and task[u'completed']:
                 continue
-            task_id = unicode(task['id'])
+            task_id = unicode(task[u'id'])
             log.info('Getting task comments for task: {0}'.format(task_id))
             task_stories = asana.api_call('task_stories', task_id=task_id)
             current_task_comments = [
                 story for story in task_stories if
-                story['type'] == 'comment']
+                story[u'type'] == u'comment']
             if current_task_comments:
                 task_comments[task_id] = current_task_comments
 
         project = Project(
-            project_id, project_json['name'], project_json['notes'])
+            project_id, project_json[u'name'], project_json[u'notes'])
         log.info('Separating Tasks into Sections')
         project.add_sections(
             Section.create_sections(project_tasks_json, task_comments))
         log.info('Starting task filtering')
         project.filter_tasks(
             current_time_utc, section_filters=section_filters,
-            task_filters=filters,
+            task_filters=task_filters,
             completed_lookback_hours=completed_lookback_hours)
 
         return project
@@ -177,14 +178,16 @@ class Project(object):
 
         :param section: The section to add to the project
         '''
-        self.sections.append(section)
+        if isinstance(section, Section):
+            self.sections.append(section)
 
     def add_sections(self, sections):
         '''Add multiple sections to the project.
 
         :param sections: A list of sections to add to the project
         '''
-        self.sections.extend(sections)
+        self.sections.extend(
+            (section for section in sections if isinstance(section, Section)))
 
     def filter_tasks(
             self, current_time_utc, section_filters=None, task_filters=None,
@@ -249,29 +252,30 @@ class Section(object):
         tasks in the tasks JSON
         '''
         sections = []
-        misc_section = Section(u'Misc')
+        misc_section = Section(u'Misc:')
         current_section = misc_section
         for task in project_tasks_json:
-            if task['name'].endswith(':'):
-                if current_section.tasks and current_section.name != u'Misc':
+            if task[u'name'].endswith(':'):
+                if current_section.tasks and current_section.name != u'Misc:':
+                    print current_section.name
                     sections.append(current_section)
-                current_section = Section(task['name'])
+                current_section = Section(task[u'name'])
             else:
-                name = task['name']
-                if task['assignee']:
-                    assignee = task['assignee']['name']
+                name = task[u'name']
+                if task[u'assignee']:
+                    assignee = task[u'assignee'][u'name']
                 else:
                     assignee = None
-                task_id = unicode(task['id'])
-                completed = task['completed']
+                task_id = unicode(task[u'id'])
+                completed = task[u'completed']
                 if completed:
                     completion_time = dateutil.parser.parse(
-                        task['completed_at'])
+                        task[u'completed_at'])
                 else:
                     completion_time = None
-                description = task['notes'] if task['notes'] else None
-                due_date = task['due_on']
-                tags = [tag['name'] for tag in task['tags']]
+                description = task[u'notes'] if task[u'notes'] else None
+                due_date = task[u'due_on']
+                tags = [tag[u'name'] for tag in task[u'tags']]
                 current_task_comments = task_comments.get(task_id)
                 current_task = Task(
                     name, assignee, completed, completion_time, description,
@@ -289,14 +293,15 @@ class Section(object):
 
         :param task: The task to add to the Section's list of tasks
         '''
-        self.tasks.append(task)
+        if isinstance(task, Task):
+            self.tasks.append(task)
 
     def add_tasks(self, tasks):
         '''Extend the Section's list of tasks with a new list of tasks.
 
         :param tasks: The list of tasks to extend the Section's list of tasks.
         '''
-        self.tasks.extend(tasks)
+        self.tasks.extend((task for task in tasks if isinstance(task, Task)))
 
 
 class Task(object):
@@ -322,9 +327,9 @@ class Task(object):
         :param task_json: The JSON representing an Asana task from Asana's API
         :param hours: The lookback time in hours to filter completed tasks on.
         '''
-        if task_json['completed']:
+        if task_json[u'completed']:
             task_completion_time = dateutil.parser.parse(
-                task_json['completed_at'])
+                task_json[u'completed_at'])
             delta = current_time_utc - task_completion_time
             return delta < datetime.timedelta(hours=hours)
         else:
@@ -429,7 +434,8 @@ def send_email(
         rendered_html, rendered_text, current_date):
     '''Sends an email using a Project and rendered templates.
 
-    :param: The Project instance for this email
+    :param project: The Project instance for this email
+    :param mail_server: The hostname of the SMTP server to send mail from
     :param from_address: The From: Address for the email to send
     :param to_addresses: The list of To: addresses for the email to be sent to
     :param cc_addresses: The list of Cc: addresses for the email to be sent to
@@ -494,14 +500,7 @@ def write_rendered_files(rendered_html, rendered_text, current_date):
         markdown_file.write(rendered_text)
 
 
-def main():
-    '''The main function for generating the mailer.
-
-    Based on the arguments, the mailer generates a Project object with its
-    appropriate Section and Tasks objects, and then renders templates
-    accordingly. This can either be written out to two files, or can be mailed
-    out using a SMTP server running on localhost.
-    '''
+def create_cli_parser():
     parser = argparse.ArgumentParser(
         description='Generates an email template for an Asana project',
         fromfile_prefix_chars='@')
@@ -540,20 +539,33 @@ def main():
         '--from-address', metavar='ADDRESS',
         help="the 'From:' address for the outgoing email")
 
+    return parser
+
+
+def main():
+    '''The main function for generating the mailer.
+
+    Based on the arguments, the mailer generates a Project object with its
+    appropriate Section and Tasks objects, and then renders templates
+    accordingly. This can either be written out to two files, or can be mailed
+    out using a SMTP server running on localhost.
+    '''
+
+    parser = create_cli_parser()
     args = parser.parse_args()
 
     if bool(args.from_address) != bool(args.to_addresses):
         parser.error(
             "'To:' and 'From:' address are required for sending email")
 
-    asana = Asana(args.api_key)
+    asana = AsanaAPI(args.api_key)
     filters = frozenset((unicode(filter) for filter in args.tag_filters))
     section_filters = frozenset(
         (unicode(section + ':') for section in args.section_filters))
     current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
     current_date = str(datetime.date.today())
     project = Project.create_project(
-        asana, args.project_id, current_time_utc, filters=filters,
+        asana, args.project_id, current_time_utc, task_filters=filters,
         section_filters=section_filters,
         completed_lookback_hours=args.completed_lookback_hours)
     rendered_html, rendered_text = generate_templates(
@@ -561,9 +573,13 @@ def main():
         current_time_utc)
 
     if args.to_addresses and args.from_address:
+        if args.cc_addresses:
+            cc_addresses = args.cc_addresses[:]
+        else:
+            cc_addresses = None
         send_email(
-            project, args.mail_server, args.from_address, args.to_addresses,
-            args.cc_addresses, rendered_html, rendered_text, current_date)
+            project, args.mail_server, args.from_address, args.to_addresses[:],
+            cc_addresses, rendered_html, rendered_text, current_date)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
     log.info('Finished')
