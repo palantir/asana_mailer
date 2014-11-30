@@ -573,9 +573,13 @@ def main():
         current_time_utc)
 
     if args.to_addresses and args.from_address:
+        if args.cc_addresses:
+            cc_addresses = args.cc_addresses[:]
+        else:
+            cc_addresses = None
         send_email(
             project, args.mail_server, args.from_address, args.to_addresses[:],
-            args.cc_addresses[:], rendered_html, rendered_text, current_date)
+            cc_addresses, rendered_html, rendered_text, current_date)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
     log.info('Finished')

@@ -1,3 +1,4 @@
+import argparse
 import codecs
 import datetime
 import glob
@@ -639,6 +640,86 @@ class AsanaMailerTestCase(unittest.TestCase):
 
         self.assertEquals(
             ('premailer transform', 'template render'), return_vals)
+
+    @mock.patch('datetime.date')
+    @mock.patch('datetime.datetime')
+    @mock.patch('asana_mailer.write_rendered_files')
+    @mock.patch('asana_mailer.send_email')
+    @mock.patch('asana_mailer.generate_templates')
+    @mock.patch('asana_mailer.Project.create_project')
+    @mock.patch('asana_mailer.AsanaAPI')
+    @mock.patch('asana_mailer.create_cli_parser')
+    def test_main(
+            self, mock_cli_parser, mock_asana_api, mock_create_project,
+            mock_generate_templates, mock_send_email,
+            mock_write_rendered_files, mock_datetime, mock_date):
+
+        mock_cli_instance = mock_cli_parser.return_value
+        mock_cli_instance.error.side_effect = SystemExit(2)
+        mock_create_project.return_value = 'Project'
+        mock_asana_instance = mock_asana_api.return_value
+        mock_datetime_now_instance = mock_datetime.now.return_value
+        mock_date.today.return_value = 'Mock Date'
+        mock_generate_templates.return_value = (
+            'rendered_html', 'rendered_text')
+
+        # Specify an to/from address(es), but not both
+        mock_cli_instance.parse_args.return_value = argparse.Namespace(
+            from_address=None, to_addresses=['example@example.com'])
+        with self.assertRaises(SystemExit) as cm:
+            asana_mailer.main()
+        self.assertEquals(cm.exception.code, 2)
+
+        namespace = argparse.Namespace(
+            api_key='api_key',
+            tag_filters=['tag_filter'],
+            section_filters=['section_filter'],
+            project_id='project_id',
+            completed_lookback_hours=None,
+            html_template='Mock.html',
+            text_template='Mock.markdown',
+            mail_server='mockhost',
+            cc_addresses=None,
+            from_address='example@example.com',
+            to_addresses=['example2@example.com'])
+        mock_cli_instance.parse_args.return_value = namespace
+        asana_mailer.main()
+        mock_asana_api.assert_called_once_with('api_key')
+        mock_create_project.assert_called_once_with(
+            mock_asana_instance, 'project_id', mock_datetime_now_instance,
+            task_filters=frozenset((u'tag_filter',)),
+            section_filters=frozenset((u'section_filter:',)),
+            completed_lookback_hours=None)
+        mock_generate_templates.assert_called_once_with(
+            'Project', 'Mock.html', 'Mock.markdown', 'Mock Date',
+            mock_datetime_now_instance)
+        mock_send_email.assert_called_once_with(
+            'Project', 'mockhost', 'example@example.com',
+            ['example2@example.com'], None, 'rendered_html', 'rendered_text',
+            'Mock Date')
+
+        # With Cc Addresses
+        namespace.cc_addresses = [
+            'example3@example.com', 'example4@example.com'
+        ]
+        mock_cli_instance.parse_args.return_value = namespace
+        mock_send_email.reset_mock()
+        asana_mailer.main()
+        mock_send_email.assert_called_once_with(
+            'Project', 'mockhost', 'example@example.com',
+            ['example2@example.com'],
+            ['example3@example.com', 'example4@example.com'], 'rendered_html',
+            'rendered_text', 'Mock Date')
+
+        # With No Addresses
+        namespace.to_addresses = None
+        namespace.from_address = None
+        mock_cli_instance.parse_args.return_value = namespace
+        mock_send_email.reset_mock()
+        asana_mailer.main()
+        self.assertEquals(mock_send_email.call_count, 0)
+        mock_write_rendered_files.assert_called_once_with(
+            'rendered_html', 'rendered_text', 'Mock Date')
 
     @mock.patch('asana_mailer.MIMEText')
     @mock.patch('asana_mailer.MIMEMultipart')
