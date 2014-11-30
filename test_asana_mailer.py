@@ -58,14 +58,271 @@ class AsanaAPITestCase(unittest.TestCase):
 
 
 class ProjectTestCase(unittest.TestCase):
-    pass
+
+    def setUp(self):
+        self.id = u'123'
+        self.name = 'Test Project'
+        self.description = 'Project Description'
+        self.project = asana_mailer.Project(
+            self.id, self.name, self.description)
+
+    def test_init(self):
+        self.assertEquals(self.project.id, self.id)
+        self.assertEquals(self.project.name, self.name)
+        self.assertEquals(self.project.description, self.description)
+        self.assertEquals(self.project.sections, [])
+        self.project = asana_mailer.Project(
+            self.id, self.name, self.description, ['123'])
+        self.assertEquals(self.project.sections, ['123'])
+
+    @mock.patch('asana_mailer.Project.filter_tasks')
+    @mock.patch('asana_mailer.Section.create_sections')
+    def test_create_project(self, mock_create_sections, mock_filter_tasks):
+        mock_asana = mock.MagicMock()
+        current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
+        now = current_time_utc.isoformat()
+        project_json = {
+            u'name': 'My Project',
+            u'notes': 'My Project Description'
+        }
+        project_tasks_json = [
+            {
+                'id': u'123', u'name': u'Test Section:',
+                u'assignee': None, u'completed': False,
+                u'notes': u'test_description', u'due_on': None,
+                u'tags': []
+            },
+            {
+                u'id': u'321', u'name': u'Do Work',
+                u'assignee': {u'name': u'test_user'},
+                u'completed': True,
+                u'completed_at': now,
+                u'notes': u'test_description',
+                u'due_on': now,
+                u'tags': [{u'name': u'Tag #{}'.format(i)} for i in xrange(5)]
+            },
+            {
+                u'id': u'456', u'name': u'More Work',
+                u'assignee': None,
+                u'completed': False,
+                u'notes': u'more_test_description',
+                u'due_on': None,
+                u'tags': []
+            },
+        ]
+        task_comments_json = (
+            (
+                {u'text': u'blah', u'type': u'comment'},
+                {u'text': u'blah2', u'type': u'not_a_comment'}
+            ),
+            (
+                {u'text': u'blah', u'type': 'comment'},
+                {u'text': u'blah3', u'type': 'comment'}
+            )
+        )
+        all_calls = [project_json, project_tasks_json]
+        all_calls.extend(task_comments_json)
+        mock_asana.api_call.side_effect = all_calls
+        new_section = asana_mailer.Section(u'Test Section:')
+        new_tasks = (
+            asana_mailer.Task(
+                u'Do Work', u'test_user', True,
+                dateutil.parser.parse(now), u'test_description',
+                dateutil.parser.parse(now),
+                [u'Tag #{}'.format(i) for i in xrange(5)], [
+                    {u'text': u'blah', u'type': u'comment'},
+                    {u'text': u'blah2', u'type': u'not_a_comment'}
+                ]
+            ),
+            asana_mailer.Task(
+                u'More Work', None, False, None, u'more_test_description',
+                None, [], [
+                    {u'text': u'blah', u'type': 'comment'},
+                    {u'text': u'blah3', u'type': 'comment'}
+                ]
+            )
+        )
+        task_comments = {
+            u'123': [
+                {u'text': u'blah', u'type': u'comment'},
+            ],
+            u'456': [
+                {u'text': u'blah', u'type': 'comment'},
+                {u'text': u'blah3', u'type': 'comment'}
+            ]
+        }
+        new_section.add_tasks(new_tasks)
+        new_sections = [new_section]
+
+        mock_create_sections.return_value = new_sections
+        # No Filters
+        new_project = asana_mailer.Project.create_project(
+            mock_asana, u'123', current_time_utc)
+        self.assertEquals(new_project.sections, new_sections)
+        mock_create_sections.assert_called_once_with(
+            project_tasks_json, task_comments)
+        mock_filter_tasks.assert_called_once_with(
+            current_time_utc, section_filters=None, task_filters=None,
+            completed_lookback_hours=None)
+
+        # Section Filters
+        section_filters = (u'Other Section:',)
+        mock_filter_tasks.reset_mock()
+        mock_create_sections.reset_mock()
+        mock_asana.api_call.side_effect = all_calls
+        new_project = asana_mailer.Project.create_project(
+            mock_asana, u'123', current_time_utc,
+            section_filters=section_filters)
+        self.assertEquals(new_project.sections, new_sections)
+        mock_create_sections.assert_called_once_with(
+            project_tasks_json, {})
+        mock_filter_tasks.assert_called_once_with(
+            current_time_utc, section_filters=section_filters,
+            task_filters=None, completed_lookback_hours=None)
+
+        # Task Filters
+        mock_filter_tasks.reset_mock()
+        mock_create_sections.reset_mock()
+        mock_asana.api_call.side_effect = all_calls
+        task_filters = [u'Tag #1']
+        new_project = asana_mailer.Project.create_project(
+            mock_asana, u'123', current_time_utc,
+            task_filters=task_filters)
+        self.assertEquals(new_project.sections, new_sections)
+        mock_create_sections.assert_called_once_with(
+            project_tasks_json, {})
+        mock_filter_tasks.assert_called_once_with(
+            current_time_utc, section_filters=None,
+            task_filters=task_filters, completed_lookback_hours=None)
+
+        # Completed Filters
+        mock_filter_tasks.reset_mock()
+        mock_create_sections.reset_mock()
+        mock_asana.api_call.side_effect = all_calls
+        completed_lookback_hours = 0
+        new_project = asana_mailer.Project.create_project(
+            mock_asana, u'123', current_time_utc,
+            completed_lookback_hours=completed_lookback_hours)
+        self.assertEquals(new_project.sections, new_sections)
+        mock_create_sections.assert_called_once_with(
+            project_tasks_json, task_comments)
+        mock_filter_tasks.assert_called_once_with(
+            current_time_utc, section_filters=None, task_filters=None,
+            completed_lookback_hours=completed_lookback_hours)
+
+        all_calls[-1] = (
+            {u'text': u'blah', u'type': 'not_a_comment'},
+            {u'text': u'blah3', u'type': 'not_a_comment'}
+        )
+
+        # Task with no comments
+        mock_filter_tasks.reset_mock()
+        mock_create_sections.reset_mock()
+        mock_asana.api_call.side_effect = all_calls
+        new_project = asana_mailer.Project.create_project(
+            mock_asana, u'123', current_time_utc)
+        self.assertEquals(new_project.sections, new_sections)
+        remove_not_comments = dict(task_comments)
+        del remove_not_comments[u'456']
+        mock_create_sections.assert_called_once_with(
+            project_tasks_json, remove_not_comments)
+        mock_filter_tasks.assert_called_once_with(
+            current_time_utc, section_filters=None, task_filters=None,
+            completed_lookback_hours=None)
+
+    def test_add_section(self):
+        self.project.add_section('test')
+        self.assertNotIn('test', self.project.sections)
+        new_section = asana_mailer.Section('New Section')
+        self.project.add_section(new_section)
+        self.assertIn(new_section, self.project.sections)
+
+    def test_add_sections(self):
+        sections = [asana_mailer.Section('One'), asana_mailer.Section('Two')]
+        self.project.add_sections(sections)
+        self.assertEquals(self.project.sections, sections)
+        self.project.sections = []
+        list_with_non_sections = [1, 2, 3]
+        list_with_non_sections.extend(sections)
+        self.project.add_sections(list_with_non_sections)
+        self.assertEquals(self.project.sections, sections)
+
+    def test_filter_tasks(self):
+        current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
+        now = current_time_utc.isoformat()
+        no_tasks = asana_mailer.Section('No Tasks')
+        section_with_tasks = asana_mailer.Section('Some Tasks')
+        completed_task = asana_mailer.Task(
+            u'Do Work', u'test_user', True,
+            dateutil.parser.parse(now), u'test_description',
+            dateutil.parser.parse(now),
+            [u'Tag #{}'.format(i) for i in xrange(5)], [
+                {u'text': u'blah', u'type': u'comment'},
+                {u'text': u'blah2', u'type': u'not_a_comment'}
+            ]
+        )
+        incomplete_task_with_tags = asana_mailer.Task(
+            u'Do Work With Tags', u'test_user', False,
+            dateutil.parser.parse(now), u'test_description',
+            dateutil.parser.parse(now),
+            [u'Tag #{}'.format(i) for i in xrange(5)], [
+                {u'text': u'blah', u'type': u'comment'},
+                {u'text': u'blah2', u'type': u'not_a_comment'}
+            ]
+        )
+        incomplete_task = asana_mailer.Task(
+            u'More Work', None, False, None, u'more_test_description',
+            None, [], [
+                {u'text': u'blah', u'type': 'comment'},
+                {u'text': u'blah3', u'type': 'comment'}
+            ]
+        )
+        section_with_tasks.add_task(completed_task)
+        self.project.add_section(no_tasks)
+        self.project.add_section(section_with_tasks)
+        self.project.filter_tasks(current_time_utc)
+        self.assertEquals(len(self.project.sections), 0)
+
+        section_with_tasks.add_task(incomplete_task)
+        self.project.sections = [no_tasks, section_with_tasks]
+        self.project.filter_tasks(current_time_utc)
+        self.assertEquals(len(self.project.sections), 1)
+        self.assertEquals(len(self.project.sections[0].tasks), 1)
+
+        # Section Filters
+        section_filters = ('None of these tasks:',)
+        self.project.filter_tasks(
+            current_time_utc, section_filters=section_filters)
+        self.assertEquals(len(self.project.sections), 0)
+
+        # Task Filters
+        task_filters = frozenset((u'Tag #1',))
+        section_with_tasks.add_task(incomplete_task_with_tags)
+        self.project.sections = [no_tasks, section_with_tasks]
+        self.project.filter_tasks(current_time_utc, task_filters=task_filters)
+        self.assertEquals(len(self.project.sections), 1)
+        self.assertEquals(len(self.project.sections[0].tasks), 1)
+
+        # Completed Lookback
+        completed_lookback_hours = 24
+        section_with_tasks.tasks = [
+            incomplete_task, incomplete_task_with_tags, completed_task
+        ]
+        self.project.sections = [no_tasks, section_with_tasks]
+        self.project.filter_tasks(
+            current_time_utc,
+            completed_lookback_hours=completed_lookback_hours)
+        self.assertEquals(len(self.project.sections), 1)
+        self.assertEquals(len(self.project.sections[0].tasks), 3)
 
 
 class SectionTestCase(unittest.TestCase):
 
+    def setUp(self):
+        self.section = asana_mailer.Section('Test Section')
+
     @classmethod
     def setup_class(cls):
-        cls.section = asana_mailer.Section('Class Test Section')
         cls.tasks = [
             asana_mailer.Task(
                 'Task #{}'.format(i), 'test_assignee', False, None,
@@ -73,17 +330,21 @@ class SectionTestCase(unittest.TestCase):
             for i in xrange(5)]
 
     def test_init(self):
-        new_section = asana_mailer.Section('Test Section')
-        self.assertEqual(new_section.name, 'Test Section')
-        self.assertEqual(new_section.tasks, [])
-        new_section = asana_mailer.Section('Test Section', [1, 2, 3])
-        self.assertEqual(new_section.name, 'Test Section')
-        self.assertEqual(new_section.tasks, [1, 2, 3])
+        self.assertEqual(self.section.name, 'Test Section')
+        self.assertEqual(self.section.tasks, [])
+        self.section = asana_mailer.Section('Test Section', [1, 2, 3])
+        self.assertEqual(self.section.name, 'Test Section')
+        self.assertEqual(self.section.tasks, [1, 2, 3])
 
     def test_create_sections(self):
         now = datetime.datetime.now().isoformat()
         project_tasks_json = [
-            {'id': u'123', u'name': u'Test Section:'},
+            {
+                'id': u'123', u'name': u'Test Section:',
+                u'assignee': None, u'completed': False,
+                u'notes': 'test_description', u'due_on': None,
+                u'tags': []
+            },
             {
                 u'id': u'321', u'name': u'Do Work',
                 u'assignee': {'name': 'test_user'},
@@ -103,8 +364,14 @@ class SectionTestCase(unittest.TestCase):
             },
         ]
         task_comments = {
-            u'123': [u'blah', u'blah2'],
-            u'321': [u'blah', u'blah3']
+            u'123': [
+                {u'text': u'blah', u'type': u'comment'},
+                {u'text': u'blah2', u'type': u'comment'}
+            ],
+            u'321': [
+                {u'text': u'blah', u'type': 'comment'},
+                {u'text': u'blah3', u'type': 'comment'}
+            ]
         }
         sections = asana_mailer.Section.create_sections(
             project_tasks_json, task_comments)
@@ -119,7 +386,10 @@ class SectionTestCase(unittest.TestCase):
             first_task.completion_time, dateutil.parser.parse(now))
         self.assertEquals(first_task.description, u'test_description')
         self.assertEquals(first_task.due_date, now)
-        self.assertEquals(first_task.comments, [u'blah', u'blah3'])
+        self.assertEquals(first_task.comments, [
+            {u'text': u'blah', u'type': 'comment'},
+            {u'text': u'blah3', u'type': 'comment'}
+        ])
         self.assertEquals(
             first_task.tags, [u'Tag #{}'.format(i) for i in xrange(5)])
         second_task = sections[0].tasks[1]
@@ -161,21 +431,19 @@ class SectionTestCase(unittest.TestCase):
         self.assertEquals(misc_task.tags, [])
 
     def test_add_task(self):
-        new_section = asana_mailer.Section('Test Section')
-        new_section.add_task('test')
-        self.assertNotIn('test', new_section.tasks)
-        new_section.add_task(type(self).tasks[0])
-        self.assertIn(type(self).tasks[0], new_section.tasks)
+        self.section.add_task('test')
+        self.assertNotIn('test', self.section.tasks)
+        self.section.add_task(type(self).tasks[0])
+        self.assertIn(type(self).tasks[0], self.section.tasks)
 
     def test_add_tasks(self):
-        new_section = asana_mailer.Section('Test Section')
-        new_section.add_tasks(type(self).tasks)
-        self.assertEquals(type(self).tasks, new_section.tasks)
-        new_section.tasks = []
+        self.section.add_tasks(type(self).tasks)
+        self.assertEquals(type(self).tasks, self.section.tasks)
+        self.section.tasks = []
         list_with_non_tasks = [1, 2, 3]
         list_with_non_tasks.extend(type(self).tasks)
-        new_section.add_tasks(list_with_non_tasks)
-        self.assertEquals(type(self).tasks, new_section.tasks)
+        self.section.add_tasks(list_with_non_tasks)
+        self.assertEquals(type(self).tasks, self.section.tasks)
 
 
 class FiltersTestCase(unittest.TestCase):
@@ -203,7 +471,7 @@ class FiltersTestCase(unittest.TestCase):
         self.assertEqual(asana_mailer.most_recent_comments([], 1), [])
 
     def test_comments_within_lookback(self):
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(dateutil.tz.tzutc())
         comments = [
             {u'created_at': (now - datetime.timedelta(days=i)).isoformat()}
             for i in reversed(xrange(7))
@@ -242,7 +510,7 @@ class TaskTestCase(unittest.TestCase):
 
     @classmethod
     def setup_class(cls):
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(dateutil.tz.tzutc())
         name = 'Test'
         assignee = 'TestUser'
         completed = True
@@ -273,7 +541,7 @@ class TaskTestCase(unittest.TestCase):
 
     def test_incomplete_or_recent(self):
         original = type(self).task
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(dateutil.tz.tzutc())
         task = asana_mailer.Task(
             original.name, original.assignee,
             original.completed, original.completion_time,
@@ -293,7 +561,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(task.incomplete_or_recent(now, 0), True)
 
     def test_incomplete_or_recent_json(self):
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(dateutil.tz.tzutc())
         tasks = [
             {u'completed_at': (now - datetime.timedelta(days=i)).isoformat()}
             for i in reversed(xrange(2))

@@ -88,7 +88,7 @@ class AsanaAPI(object):
         log.info('Making API Call to {0}'.format(url))
         response = requests.get(url, auth=(self.api_key, ''))
         if response.status_code == requests.codes.ok:
-            return response.json()['data']
+            return response.json()[u'data']
 
 
 class Project(object):
@@ -110,7 +110,7 @@ class Project(object):
 
     @staticmethod
     def create_project(
-            asana, project_id, current_time_utc, filters=None,
+            asana, project_id, current_time_utc, task_filters=None,
             section_filters=None, completed_lookback_hours=None):
         '''Creates a Project utilizing data from Asana.
 
@@ -121,7 +121,7 @@ class Project(object):
 
         :param asana: The initialized Asana object that makes API calls
         :param project_id: The Asana Project ID
-        :param filters: A list of tag filters for filtering out tasks
+        :param task_filters: A list of tag filters for filtering out tasks
         :param section_filters: A list of sections to filter out tasks
         :param completed_lookback_hours: An amount in hours to look back for
         completed tasks
@@ -137,38 +137,38 @@ class Project(object):
         current_section = None
         log.info('Starting API Calls for Task Comments')
         for task in project_tasks_json:
-            if task['name'].endswith(':'):
-                current_section = task['name']
+            if task[u'name'].endswith(':'):
+                current_section = task[u'name']
+            # Optimize calls to API
             if section_filters and current_section not in section_filters:
                 continue
-            tag_names = frozenset((tag['name'] for tag in task['tags']))
-            # Optimize calls to API
-            if filters and not tag_names >= filters:
+            tag_names = frozenset((tag[u'name'] for tag in task[u'tags']))
+            if task_filters and not tag_names >= task_filters:
                 continue
             elif (completed_lookback_hours is not None and not
                     Task.incomplete_or_recent_json(
                         current_time_utc, task, completed_lookback_hours)):
                 continue
-            elif completed_lookback_hours is None and task['completed']:
+            elif completed_lookback_hours is None and task[u'completed']:
                 continue
-            task_id = unicode(task['id'])
+            task_id = unicode(task[u'id'])
             log.info('Getting task comments for task: {0}'.format(task_id))
             task_stories = asana.api_call('task_stories', task_id=task_id)
             current_task_comments = [
                 story for story in task_stories if
-                story['type'] == 'comment']
+                story[u'type'] == u'comment']
             if current_task_comments:
                 task_comments[task_id] = current_task_comments
 
         project = Project(
-            project_id, project_json['name'], project_json['notes'])
+            project_id, project_json[u'name'], project_json[u'notes'])
         log.info('Separating Tasks into Sections')
         project.add_sections(
             Section.create_sections(project_tasks_json, task_comments))
         log.info('Starting task filtering')
         project.filter_tasks(
             current_time_utc, section_filters=section_filters,
-            task_filters=filters,
+            task_filters=task_filters,
             completed_lookback_hours=completed_lookback_hours)
 
         return project
@@ -178,14 +178,16 @@ class Project(object):
 
         :param section: The section to add to the project
         '''
-        self.sections.append(section)
+        if isinstance(section, Section):
+            self.sections.append(section)
 
     def add_sections(self, sections):
         '''Add multiple sections to the project.
 
         :param sections: A list of sections to add to the project
         '''
-        self.sections.extend(sections)
+        self.sections.extend(
+            (section for section in sections if isinstance(section, Section)))
 
     def filter_tasks(
             self, current_time_utc, section_filters=None, task_filters=None,
@@ -253,27 +255,27 @@ class Section(object):
         misc_section = Section(u'Misc:')
         current_section = misc_section
         for task in project_tasks_json:
-            if task['name'].endswith(':'):
+            if task[u'name'].endswith(':'):
                 if current_section.tasks and current_section.name != u'Misc:':
                     print current_section.name
                     sections.append(current_section)
-                current_section = Section(task['name'])
+                current_section = Section(task[u'name'])
             else:
-                name = task['name']
-                if task['assignee']:
-                    assignee = task['assignee']['name']
+                name = task[u'name']
+                if task[u'assignee']:
+                    assignee = task[u'assignee'][u'name']
                 else:
                     assignee = None
-                task_id = unicode(task['id'])
-                completed = task['completed']
+                task_id = unicode(task[u'id'])
+                completed = task[u'completed']
                 if completed:
                     completion_time = dateutil.parser.parse(
-                        task['completed_at'])
+                        task[u'completed_at'])
                 else:
                     completion_time = None
-                description = task['notes'] if task['notes'] else None
-                due_date = task['due_on']
-                tags = [tag['name'] for tag in task['tags']]
+                description = task[u'notes'] if task[u'notes'] else None
+                due_date = task[u'due_on']
+                tags = [tag[u'name'] for tag in task[u'tags']]
                 current_task_comments = task_comments.get(task_id)
                 current_task = Task(
                     name, assignee, completed, completion_time, description,
@@ -325,9 +327,9 @@ class Task(object):
         :param task_json: The JSON representing an Asana task from Asana's API
         :param hours: The lookback time in hours to filter completed tasks on.
         '''
-        if task_json['completed']:
+        if task_json[u'completed']:
             task_completion_time = dateutil.parser.parse(
-                task_json['completed_at'])
+                task_json[u'completed_at'])
             delta = current_time_utc - task_completion_time
             return delta < datetime.timedelta(hours=hours)
         else:
@@ -563,7 +565,7 @@ def main():
     current_time_utc = datetime.datetime.now(dateutil.tz.tzutc())
     current_date = str(datetime.date.today())
     project = Project.create_project(
-        asana, args.project_id, current_time_utc, filters=filters,
+        asana, args.project_id, current_time_utc, task_filters=filters,
         section_filters=section_filters,
         completed_lookback_hours=args.completed_lookback_hours)
     rendered_html, rendered_text = generate_templates(
