@@ -14,6 +14,8 @@ import requests
 
 import asana_mailer
 
+from requests.exceptions import HTTPError
+
 
 class AsanaAPITestCase(unittest.TestCase):
 
@@ -38,11 +40,17 @@ class AsanaAPITestCase(unittest.TestCase):
         api.get('project', {'project_id': u'123'})
         mock_requests_instance.json.assert_called_once_with()
 
-        mock_requests_instance.status_code = requests.codes.not_found
-        self.assertIsNone(
-            api.get('project_tasks', {'project_id': u'123'}))
+        mock_requests_instance.reset_mock()
+        api.get('project_tasks', {'project_id': u'123'})
+        mock_requests_instance.json.assert_called_once_with()
 
-        api.get('task_stories', {'task_id': u'123'})
+        mock_requests_instance.status_code = requests.codes.not_found
+        mock_requests_instance.content = (
+            '{"errors": [{"message": "404 Not Found"}]}'
+        )
+        mock_requests_instance.raise_for_status.side_effect = HTTPError()
+        with self.assertRaises(HTTPError):
+            api.get('task_stories', {'task_id': u'123'})
         mock_requests.assertHasCalls([
             mock.call(url='{}{}'.format(
                 type(api).asana_api_url,
@@ -93,15 +101,6 @@ class ProjectTestCase(unittest.TestCase):
                 u'assignee': None, u'completed': False,
                 u'notes': u'test_description', u'due_on': None,
                 u'tags': []
-            },
-            {
-                u'id': u'321', u'name': u'Do Work',
-                u'assignee': {u'name': u'test_user'},
-                u'completed': True,
-                u'completed_at': now,
-                u'notes': u'test_description',
-                u'due_on': now,
-                u'tags': [{u'name': u'Tag #{}'.format(i)} for i in xrange(5)]
             },
             {
                 u'id': u'456', u'name': u'More Work',
@@ -164,8 +163,7 @@ class ProjectTestCase(unittest.TestCase):
         mock_create_sections.assert_called_once_with(
             project_tasks_json, task_comments)
         mock_filter_tasks.assert_called_once_with(
-            current_time_utc, section_filters=None, task_filters=None,
-            completed_lookback_hours=None)
+            current_time_utc, section_filters=None, task_filters=None)
 
         # Section Filters
         section_filters = (u'Other Section:',)
@@ -180,7 +178,7 @@ class ProjectTestCase(unittest.TestCase):
             project_tasks_json, {})
         mock_filter_tasks.assert_called_once_with(
             current_time_utc, section_filters=section_filters,
-            task_filters=None, completed_lookback_hours=None)
+            task_filters=None)
 
         # Task Filters
         mock_filter_tasks.reset_mock()
@@ -194,23 +192,7 @@ class ProjectTestCase(unittest.TestCase):
         mock_create_sections.assert_called_once_with(
             project_tasks_json, {})
         mock_filter_tasks.assert_called_once_with(
-            current_time_utc, section_filters=None,
-            task_filters=task_filters, completed_lookback_hours=None)
-
-        # Completed Filters
-        mock_filter_tasks.reset_mock()
-        mock_create_sections.reset_mock()
-        mock_asana.get.side_effect = all_calls
-        completed_lookback_hours = 0
-        new_project = asana_mailer.Project.create_project(
-            mock_asana, u'123', current_time_utc,
-            completed_lookback_hours=completed_lookback_hours)
-        self.assertEquals(new_project.sections, new_sections)
-        mock_create_sections.assert_called_once_with(
-            project_tasks_json, task_comments)
-        mock_filter_tasks.assert_called_once_with(
-            current_time_utc, section_filters=None, task_filters=None,
-            completed_lookback_hours=completed_lookback_hours)
+            current_time_utc, section_filters=None, task_filters=task_filters)
 
         all_calls[-1] = (
             {u'text': u'blah', u'type': 'not_a_comment'},
@@ -229,8 +211,7 @@ class ProjectTestCase(unittest.TestCase):
         mock_create_sections.assert_called_once_with(
             project_tasks_json, remove_not_comments)
         mock_filter_tasks.assert_called_once_with(
-            current_time_utc, section_filters=None, task_filters=None,
-            completed_lookback_hours=None)
+            current_time_utc, section_filters=None, task_filters=None)
 
     def test_add_section(self):
         self.project.add_section('test')
@@ -254,15 +235,6 @@ class ProjectTestCase(unittest.TestCase):
         now = current_time_utc.isoformat()
         no_tasks = asana_mailer.Section('No Tasks')
         section_with_tasks = asana_mailer.Section('Some Tasks')
-        completed_task = asana_mailer.Task(
-            u'Do Work', u'test_user', True,
-            dateutil.parser.parse(now), u'test_description',
-            dateutil.parser.parse(now),
-            [u'Tag #{}'.format(i) for i in xrange(5)], [
-                {u'text': u'blah', u'type': u'comment'},
-                {u'text': u'blah2', u'type': u'not_a_comment'}
-            ]
-        )
         incomplete_task_with_tags = asana_mailer.Task(
             u'Do Work With Tags', u'test_user', False,
             dateutil.parser.parse(now), u'test_description',
@@ -279,11 +251,6 @@ class ProjectTestCase(unittest.TestCase):
                 {u'text': u'blah3', u'type': 'comment'}
             ]
         )
-        section_with_tasks.add_task(completed_task)
-        self.project.add_section(no_tasks)
-        self.project.add_section(section_with_tasks)
-        self.project.filter_tasks(current_time_utc)
-        self.assertEquals(len(self.project.sections), 0)
 
         section_with_tasks.add_task(incomplete_task)
         self.project.sections = [no_tasks, section_with_tasks]
@@ -304,18 +271,6 @@ class ProjectTestCase(unittest.TestCase):
         self.project.filter_tasks(current_time_utc, task_filters=task_filters)
         self.assertEquals(len(self.project.sections), 1)
         self.assertEquals(len(self.project.sections[0].tasks), 1)
-
-        # Completed Lookback
-        completed_lookback_hours = 24
-        section_with_tasks.tasks = [
-            incomplete_task, incomplete_task_with_tags, completed_task
-        ]
-        self.project.sections = [no_tasks, section_with_tasks]
-        self.project.filter_tasks(
-            current_time_utc,
-            completed_lookback_hours=completed_lookback_hours)
-        self.assertEquals(len(self.project.sections), 1)
-        self.assertEquals(len(self.project.sections[0].tasks), 3)
 
 
 class SectionTestCase(unittest.TestCase):
@@ -540,54 +495,6 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(task.due_date, original.due_date)
         self.assertEqual(task.tags, original.tags)
         self.assertEqual(task.comments, original.comments)
-
-    def test_incomplete_or_recent(self):
-        original = type(self).task
-        now = datetime.datetime.now(dateutil.tz.tzutc())
-        task = asana_mailer.Task(
-            original.name, original.assignee,
-            original.completed, original.completion_time,
-            original.description, original.due_date,
-            original.tags, original.comments)
-
-        task.completed = True
-        task.completion_time = now
-        self.assertEqual(task.incomplete_or_recent(now, 0), False)
-        self.assertEqual(task.incomplete_or_recent(now, 1), True)
-        task.completion_time = now - datetime.timedelta(days=2)
-        self.assertEqual(task.incomplete_or_recent(now, 1), False)
-        self.assertEqual(task.incomplete_or_recent(now, 48), False)
-        self.assertEqual(task.incomplete_or_recent(now, 49), True)
-
-        task.completed = False
-        self.assertEqual(task.incomplete_or_recent(now, 0), True)
-
-    def test_incomplete_or_recent_json(self):
-        now = datetime.datetime.now(dateutil.tz.tzutc())
-        tasks = [
-            {u'completed_at': (now - datetime.timedelta(days=i)).isoformat()}
-            for i in reversed(xrange(2))
-        ]
-        for t in tasks:
-            t[u'completed'] = True
-
-        self.assertEqual(
-            asana_mailer.Task.incomplete_or_recent_json(now, tasks[-1], 0),
-            False)
-        self.assertEqual(
-            asana_mailer.Task.incomplete_or_recent_json(now, tasks[-1], 1),
-            True)
-        self.assertEqual(
-            asana_mailer.Task.incomplete_or_recent_json(now, tasks[-2], 24),
-            False)
-        self.assertEqual(
-            asana_mailer.Task.incomplete_or_recent_json(now, tasks[-2], 25),
-            True)
-
-        incomplete = {u'completed_at': now.isoformat(), u'completed': False}
-        self.assertEqual(
-            asana_mailer.Task.incomplete_or_recent_json(now, incomplete, 0),
-            True)
 
     def test_tags_in(self):
         filter_set = set()

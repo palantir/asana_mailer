@@ -26,6 +26,7 @@ Asana's REST API to generate a plaintext and HTML email using Jinja2 templates.
 import argparse
 import codecs
 import datetime
+import json
 import logging
 import smtplib
 
@@ -94,6 +95,16 @@ class AsanaAPI(object):
         response = requests.get(url, params=params, auth=(self.api_key, ''))
         if response.status_code == requests.codes.ok:
             return response.json()[u'data']
+        else:
+            log.error('Asana API Returned Non-OK (200) Response')
+            if response.content:
+                try:
+                    log.error('Response Content:\n{0}'.format(
+                        json.dumps(json.loads(response.content), indent=2)))
+                except (TypeError, ValueError):
+                    # If the error content isn't JSON, don't log it.
+                    pass
+            response.raise_for_status()
 
 
 class Project(object):
@@ -134,9 +145,22 @@ class Project(object):
         '''
         log.info('Creating project object from Asana Project {0}'.format(
             project_id))
+
         project_json = asana.get('project', {'project_id': project_id})
+
+        tasks_params = {}
+        if completed_lookback_hours:
+            completed_since = (current_time_utc - datetime.timedelta(
+                hours=completed_lookback_hours)).replace(
+                    microsecond=0).isoformat()
+            log.info(
+                'Retaining tasks completed since {0}'.format(completed_since))
+        else:
+            completed_since = 'now'
+        tasks_params['completed_since'] = completed_since
         project_tasks_json = asana.get(
-            'project_tasks', {'project_id': project_id}, expand='.')
+            'project_tasks', {'project_id': project_id}, expand='.',
+            params=tasks_params)
         task_comments = {}
 
         current_section = None
@@ -149,12 +173,6 @@ class Project(object):
                 continue
             tag_names = frozenset((tag[u'name'] for tag in task[u'tags']))
             if task_filters and not tag_names >= task_filters:
-                continue
-            elif (completed_lookback_hours is not None and not
-                    Task.incomplete_or_recent_json(
-                        current_time_utc, task, completed_lookback_hours)):
-                continue
-            elif completed_lookback_hours is None and task[u'completed']:
                 continue
             task_id = unicode(task[u'id'])
             log.info('Getting task comments for task: {0}'.format(task_id))
@@ -173,8 +191,7 @@ class Project(object):
         log.info('Starting task filtering')
         project.filter_tasks(
             current_time_utc, section_filters=section_filters,
-            task_filters=task_filters,
-            completed_lookback_hours=completed_lookback_hours)
+            task_filters=task_filters)
 
         return project
 
@@ -195,14 +212,11 @@ class Project(object):
             (section for section in sections if isinstance(section, Section)))
 
     def filter_tasks(
-            self, current_time_utc, section_filters=None, task_filters=None,
-            completed_lookback_hours=None):
+            self, current_time_utc, section_filters=None, task_filters=None):
         '''Filter out tasks based on filters based on filter criteria.
 
         :param sections_filters: A list of sections to filter the Project on
         :param task_filters: A list of tags to filter the Project's tasks on
-        :param completed_lookback_hours: An amount in hours to look back for
-        completed tasks. If None, no completed tasks are filtered out.
         :param current_time_utc: The current time in UTC
         '''
         # Section Filters
@@ -219,20 +233,6 @@ class Project(object):
                 section.tasks[:] = [
                     task for task in section.tasks
                     if task.tags_in(task_filters)]
-        # Completed Filters
-        if completed_lookback_hours is not None:
-            log.info(
-                'Retaining tasks completed within the last {0} hours'.format(
-                    completed_lookback_hours))
-        for section in self.sections:
-            if completed_lookback_hours is not None:
-                section.tasks[:] = [
-                    task for task in section.tasks
-                    if task.incomplete_or_recent(
-                        current_time_utc, completed_lookback_hours)]
-            else:
-                section.tasks[:] = [
-                    task for task in section.tasks if not task.completed]
         # Remove Empty Sections
         log.info('Removing empty sections')
         self.sections[:] = [s for s in self.sections if s.tasks]
@@ -323,38 +323,10 @@ class Task(object):
         self.tags = tags
         self.comments = comments
 
-    @staticmethod
-    def incomplete_or_recent_json(current_time_utc, task_json, hours):
-        '''Returns whether a task's JSON is incomplete or recently completed.
-
-        :param current_time_utc: The current time in UTC
-        :param task_json: The JSON representing an Asana task from Asana's API
-        :param hours: The lookback time in hours to filter completed tasks on.
-        '''
-        if task_json[u'completed']:
-            task_completion_time = dateutil.parser.parse(
-                task_json[u'completed_at'])
-            delta = current_time_utc - task_completion_time
-            return delta < datetime.timedelta(hours=hours)
-        else:
-            return True
-
     def tags_in(self, tag_filter_set):
         '''Determines if a Tasks's tags are within a set of tag filters'''
         task_tag_set = frozenset(self.tags)
         return task_tag_set >= tag_filter_set
-
-    def incomplete_or_recent(self, current_time_utc, hours):
-        '''Returns whether a task's is incomplete or recently completed.
-
-        :param current_time_utc: The current time in UTC
-        :param hours: The lookback time in hours to filter completed tasks on.
-        '''
-        if self.completed:
-            delta = current_time_utc - self.completion_time
-            return delta < datetime.timedelta(hours=hours)
-        else:
-            return True
 
 
 # Filters
