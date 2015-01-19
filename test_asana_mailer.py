@@ -25,23 +25,24 @@ class AsanaAPITestCase(unittest.TestCase):
         self.assertEqual(type(self).api.api_key, 'api_key')
 
     @mock.patch('requests.get')
-    def test_api_call(self, mock_requests):
+    def test_get(self, mock_requests):
         api = type(self).api
         mock_requests_instance = mock_requests.return_value
         mock_requests_instance.status_code = requests.codes.ok
         with self.assertRaises(AttributeError):
-            api.api_call('not_an_endpoint')
+            api.get('not_an_endpoint')
         with self.assertRaises(KeyError):
-            api.api_call('project', invalid_param='invalid_arg')
+            api.get('project', {'invalid_path_var': 'invalid'})
         auth = ('api_key', '')
 
-        api.api_call('project', project_id=u'123')
+        api.get('project', {'project_id': u'123'})
         mock_requests_instance.json.assert_called_once_with()
 
         mock_requests_instance.status_code = requests.codes.not_found
-        self.assertIsNone(api.api_call('project_tasks', project_id=u'123'))
+        self.assertIsNone(
+            api.get('project_tasks', {'project_id': u'123'}))
 
-        api.api_call('task_stories', task_id=u'123')
+        api.get('task_stories', {'task_id': u'123'})
         mock_requests.assertHasCalls([
             mock.call(url='{}{}'.format(
                 type(api).asana_api_url,
@@ -123,7 +124,7 @@ class ProjectTestCase(unittest.TestCase):
         )
         all_calls = [project_json, project_tasks_json]
         all_calls.extend(task_comments_json)
-        mock_asana.api_call.side_effect = all_calls
+        mock_asana.get.side_effect = all_calls
         new_section = asana_mailer.Section(u'Test Section:')
         new_tasks = (
             asana_mailer.Task(
@@ -170,7 +171,7 @@ class ProjectTestCase(unittest.TestCase):
         section_filters = (u'Other Section:',)
         mock_filter_tasks.reset_mock()
         mock_create_sections.reset_mock()
-        mock_asana.api_call.side_effect = all_calls
+        mock_asana.get.side_effect = all_calls
         new_project = asana_mailer.Project.create_project(
             mock_asana, u'123', current_time_utc,
             section_filters=section_filters)
@@ -184,7 +185,7 @@ class ProjectTestCase(unittest.TestCase):
         # Task Filters
         mock_filter_tasks.reset_mock()
         mock_create_sections.reset_mock()
-        mock_asana.api_call.side_effect = all_calls
+        mock_asana.get.side_effect = all_calls
         task_filters = [u'Tag #1']
         new_project = asana_mailer.Project.create_project(
             mock_asana, u'123', current_time_utc,
@@ -199,7 +200,7 @@ class ProjectTestCase(unittest.TestCase):
         # Completed Filters
         mock_filter_tasks.reset_mock()
         mock_create_sections.reset_mock()
-        mock_asana.api_call.side_effect = all_calls
+        mock_asana.get.side_effect = all_calls
         completed_lookback_hours = 0
         new_project = asana_mailer.Project.create_project(
             mock_asana, u'123', current_time_utc,
@@ -219,7 +220,7 @@ class ProjectTestCase(unittest.TestCase):
         # Task with no comments
         mock_filter_tasks.reset_mock()
         mock_create_sections.reset_mock()
-        mock_asana.api_call.side_effect = all_calls
+        mock_asana.get.side_effect = all_calls
         new_project = asana_mailer.Project.create_project(
             mock_asana, u'123', current_time_utc)
         self.assertEquals(new_project.sections, new_sections)
