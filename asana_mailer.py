@@ -68,25 +68,30 @@ class AsanaAPI(object):
 
     asana_api_url = 'https://app.asana.com/api/1.0/'
     project_endpoint = 'projects/{project_id}'
-    project_tasks_endpoint = 'projects/{project_id}/tasks?opt_expand=.'
+    project_tasks_endpoint = 'projects/{project_id}/tasks'
     task_stories_endpoint = 'tasks/{task_id}/stories'
 
     def __init__(self, api_key):
         self.api_key = api_key
 
-    def api_call(self, endpoint_name, **kwargs):
+    def get(self, endpoint_name, path_vars=None, expand=None, params=None):
         '''Makes a call to Asana's API.
 
         :param endpoint_name: The endpoint attribute to connect to
         :param **kwargs: The keyword arguments necessary for retrieving data
         from a particular endpoint
         '''
-        endpoint = getattr(
-            type(self), '{0}_endpoint'.format(endpoint_name))
-        url = '{0}{1}'.format(
-            type(self).asana_api_url, endpoint.format(**kwargs))
+        endpoint = getattr(type(self), '{0}_endpoint'.format(endpoint_name))
+        if path_vars is not None:
+            endpoint = endpoint.format(**path_vars)
+        url = '{0}{1}'.format(type(self).asana_api_url, endpoint)
         log.info('Making API Call to {0}'.format(url))
-        response = requests.get(url, auth=(self.api_key, ''))
+        if expand:
+            if params is None:
+                params = {}
+            if 'opt_expand' not in params:  # Don't overwrite parameters
+                params['opt_expand'] = expand
+        response = requests.get(url, params=params, auth=(self.api_key, ''))
         if response.status_code == requests.codes.ok:
             return response.json()[u'data']
 
@@ -129,9 +134,9 @@ class Project(object):
         '''
         log.info('Creating project object from Asana Project {0}'.format(
             project_id))
-        project_json = asana.api_call('project', project_id=project_id)
-        project_tasks_json = asana.api_call(
-            'project_tasks', project_id=project_id)
+        project_json = asana.get('project', {'project_id': project_id})
+        project_tasks_json = asana.get(
+            'project_tasks', {'project_id': project_id}, expand='.')
         task_comments = {}
 
         current_section = None
@@ -153,7 +158,7 @@ class Project(object):
                 continue
             task_id = unicode(task[u'id'])
             log.info('Getting task comments for task: {0}'.format(task_id))
-            task_stories = asana.api_call('task_stories', task_id=task_id)
+            task_stories = asana.get('task_stories', {'task_id': task_id})
             current_task_comments = [
                 story for story in task_stories if
                 story[u'type'] == u'comment']
@@ -257,7 +262,6 @@ class Section(object):
         for task in project_tasks_json:
             if task[u'name'].endswith(':'):
                 if current_section.tasks and current_section.name != u'Misc:':
-                    print current_section.name
                     sections.append(current_section)
                 current_section = Section(task[u'name'])
             else:
