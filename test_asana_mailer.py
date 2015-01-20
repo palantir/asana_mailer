@@ -26,32 +26,72 @@ class AsanaAPITestCase(unittest.TestCase):
     def test_init(self):
         self.assertEqual(type(self).api.api_key, 'api_key')
 
+    @mock.patch('json.loads')
     @mock.patch('requests.get')
-    def test_get(self, mock_requests):
+    def test_get(self, mock_get_request, mock_json_loads):
         api = type(self).api
-        mock_requests_instance = mock_requests.return_value
-        mock_requests_instance.status_code = requests.codes.ok
+        mock_response = mock_get_request.return_value
+        mock_response.status_code = requests.codes.ok
         with self.assertRaises(AttributeError):
             api.get('not_an_endpoint')
         with self.assertRaises(KeyError):
             api.get('project', {'invalid_path_var': 'invalid'})
         auth = ('api_key', '')
 
+        # No Path Vars
+        api.get('project')
+        mock_get_request.assert_called_once_with('{0}{1}'.format(
+            api.asana_api_url, api.project_endpoint), params=None, auth=auth)
+
+        mock_get_request.reset_mock()
         api.get('project', {'project_id': u'123'})
-        mock_requests_instance.json.assert_called_once_with()
+        mock_response.json.assert_called_once_with()
 
-        mock_requests_instance.reset_mock()
-        api.get('project_tasks', {'project_id': u'123'})
-        mock_requests_instance.json.assert_called_once_with()
+        mock_response.reset_mock()
+        api.get('project_tasks', {'project_id': u'123'}, expand='.')
+        mock_response.json.assert_called_once_with()
 
-        mock_requests_instance.status_code = requests.codes.not_found
-        mock_requests_instance.content = (
+        mock_get_request.reset_mock()
+        api.get(
+            'project_tasks', {'project_id': u'123'}, expand='.',
+            params={'opt_expand': 'name'})
+        full_endpoint = api.project_tasks_endpoint.format(
+            project_id=u'123')
+        mock_get_request.assert_called_once_with(
+            '{0}{1}'.format(api.asana_api_url, full_endpoint),
+            params={'opt_expand': 'name'}, auth=auth)
+
+        mock_response.reset_mock()
+        mock_response.status_code = requests.codes.not_found
+        mock_response.content = (
             '{"errors": [{"message": "404 Not Found"}]}'
         )
-        mock_requests_instance.raise_for_status.side_effect = HTTPError()
+        mock_response.raise_for_status.side_effect = HTTPError()
         with self.assertRaises(HTTPError):
             api.get('task_stories', {'task_id': u'123'})
-        mock_requests.assertHasCalls([
+
+        # No content should still throw exception
+        mock_response.content = None
+        with self.assertRaises(HTTPError):
+            api.get('task_stories', {'task_id': u'123'})
+
+        mock_response.raise_for_status.side_effect = None
+        mock_json_loads.side_effect = TypeError()
+        try:
+            api.get('project', {'project_id': u'123'})
+        except TypeError:
+            self.fail(
+                'Asana.get should handle TypeError during JSON Error'
+                'Conversion')
+        mock_json_loads.side_effect = ValueError()
+        try:
+            api.get('project', {'project_id': u'123'})
+        except ValueError:
+            self.fail(
+                'Asana.get should handle TypeError during JSON Error'
+                'Conversion')
+
+        mock_get_request.assertHasCalls([
             mock.call(url='{}{}'.format(
                 type(api).asana_api_url,
                 type(api).project_endpoint.format(project_id=u'123')),
@@ -164,6 +204,19 @@ class ProjectTestCase(unittest.TestCase):
             project_tasks_json, task_comments)
         mock_filter_tasks.assert_called_once_with(
             current_time_utc, section_filters=None, task_filters=None)
+
+        # Completed Lookback
+        mock_create_sections.return_value = new_sections
+        mock_asana.get.side_effect = all_calls
+        lookback_hours = 10
+        new_project = asana_mailer.Project.create_project(
+            mock_asana, u'123', current_time_utc,
+            completed_lookback_hours=lookback_hours)
+        completed_since = (current_time_utc - datetime.timedelta(
+            hours=lookback_hours)).replace(microsecond=0).isoformat()
+        mock_asana.get.assert_any_call(
+            'project_tasks', {'project_id': u'123'}, expand='.',
+            params={'completed_since': completed_since})
 
         # Section Filters
         section_filters = (u'Other Section:',)
