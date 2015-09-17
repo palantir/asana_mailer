@@ -10,7 +10,8 @@ Requires Python 2.7.
 * `python asana_mailer`
 
 ## Features
-* Generates an inline CSS HTML email, using a default styled template.
+* Generates an inline CSS HTML email, using a default styled template. Inlining
+  can be optionally turned off to help test new template styles.
 * Generates a Markdown-compatible plain-text email.
 * Allows you to swap out default templates with custom templates (place in
   `templates` directory).
@@ -124,7 +125,7 @@ template for use with your project.
 
 ## Usage
 
-    usage: asana_mailer.py [-h] [-c HOURS] [-f TAG [TAG ...]]
+    usage: asana_mailer.py [-h] [-i] [-c HOURS] [-f TAG [TAG ...]]
                           [-s SECTION [SECTION ...]]
                           [--html-template HTML_TEMPLATE]
                           [--text-template TEXT_TEMPLATE]
@@ -142,6 +143,7 @@ template for use with your project.
 
     optional arguments:
       -h, --help            show this help message and exit
+      -i                    skip inlining CSS
       -c HOURS, --completed HOURS
                             show non-archived tasks completed within the past
                             hours specified
