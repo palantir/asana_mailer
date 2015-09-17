@@ -371,7 +371,7 @@ def as_date(datetime_str):
 
 
 def generate_templates(
-        project, html_template, text_template, current_date, current_time_utc):
+        project, html_template, text_template, current_date, current_time_utc, skip_inline_css=False):
     '''Generates the templates using Jinja2 templates
 
     :param html_template: The filename of the HTML template in the templates
@@ -391,9 +391,14 @@ def generate_templates(
 
     log.info('Rendering HTML Template')
     html = env.get_template(html_template)
-    rendered_html = premailer.transform(html.render(
-        project=project, current_date=current_date,
-        current_time_utc=current_time_utc))
+    if skip_inline_css:
+        rendered_html = html.render(
+            project=project, current_date=current_date,
+            current_time_utc=current_time_utc)
+    else:
+        rendered_html = premailer.transform(html.render(
+            project=project, current_date=current_date,
+            current_time_utc=current_time_utc))
 
     log.info('Rendering Text Template')
     env.autoescape = False
@@ -483,6 +488,10 @@ def create_cli_parser():
     parser.add_argument('project_id', help='the asana project id')
     parser.add_argument('api_key', help='your asana api key')
     parser.add_argument(
+        '-i', '--skip-inline-css',
+        action='store_false', 
+        default=True, help='skip inlining of CSS in rendered HTML')
+    parser.add_argument(
         '-c', '--completed', type=int, dest='completed_lookback_hours',
         metavar='HOURS',
         help='show non-archived tasks completed within the past hours '
@@ -546,7 +555,7 @@ def main():
         completed_lookback_hours=args.completed_lookback_hours)
     rendered_html, rendered_text = generate_templates(
         project, args.html_template, args.text_template, current_date,
-        current_time_utc)
+        current_time_utc, args.skip_inline_css)
 
     if args.to_addresses and args.from_address:
         if args.cc_addresses:
