@@ -412,7 +412,7 @@ def generate_templates(
 
 def send_email(
         project, mail_server, from_address, to_addresses, cc_addresses,
-        rendered_html, rendered_text, current_date):
+        rendered_html, rendered_text, current_date, smtp_username=None, smtp_password=None, smtp_port=None):
     '''Sends an email using a Project and rendered templates.
 
     :param project: The Project instance for this email
@@ -423,6 +423,9 @@ def send_email(
     :param rendered_html: The rendered HTML template
     :param rendered_text: The rendered text template
     :param current_date: The current date
+    :param smtp_username: The username to authenticate to SMTP server with
+    :param smtp_password: The password to authenticate to SMTP server with
+    :param smtp_port: The port to connect to the SMTP server with
     '''
 
     to_address_str = ', '.join(to_addresses)
@@ -451,9 +454,18 @@ def send_email(
         to_addresses.extend(cc_addresses)
 
     try:
-        log.info('Connecting to SMTP Server: {0}'.format(mail_server))
-        smtp_conn = smtplib.SMTP(mail_server, timeout=300)
-        log.info('Sending Email')
+        if (smtp_username != None and smtp_password != None):
+            if not smtp_port:
+                smtp_port = 465
+            log.info('Connecting to authenticated SMTP Server: {0}'.format(mail_server))
+            smtp_conn = smtplib.SMTP_SSL(mail_server, port=smtp_port, timeout=300)
+            log.info('Logging in to Email')
+            smtp_conn.ehlo()
+            smtp_conn.login(smtp_username, smtp_password)
+        else:
+            log.info('Connecting to anonymous SMTP Server: {0}'.format(mail_server))
+            smtp_conn = smtplib.SMTP(mail_server, timeout=300)
+            log.info('Sending Email')
         smtp_conn.sendmail(from_address, to_addresses, message.as_string())
         smtp_conn.quit()
     except smtplib.SMTPException:
@@ -523,6 +535,12 @@ def create_cli_parser():
     email_group.add_argument(
         '--from-address', metavar='ADDRESS',
         help="the 'From:' address for the outgoing email")
+    email_group.add_argument(
+        '--username', metavar='ADDRESS', default=None,
+        help="the username to authenticate to the outgoing (SMTP) mail server over SSL")
+    email_group.add_argument(
+        '--password', metavar='ADDRESS', default=None,
+        help="the password to authenticate to the outgoing (SMTP) mail server over SSL")
 
     return parser
 
@@ -564,7 +582,7 @@ def main():
             cc_addresses = None
         send_email(
             project, args.mail_server, args.from_address, args.to_addresses[:],
-            cc_addresses, rendered_html, rendered_text, current_date)
+            cc_addresses, rendered_html, rendered_text, current_date, args.username, args.password)
     else:
         write_rendered_files(rendered_html, rendered_text, current_date)
     log.info('Finished')

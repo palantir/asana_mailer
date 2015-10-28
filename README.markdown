@@ -168,6 +168,10 @@ template for use with your project.
                             the 'Cc:' addresses for the outgoing email
       --from-address ADDRESS
                             the 'From:' address for the outgoing email
+      --username ADDRESS
+                            the username to authenticate to the outgoing (SMTP) mail server over SSL (optional)
+      --password ADDRESS
+                            the password to authenticate to the outgoing (SMTP) mail server over SSL (optional)
 
 ## License
 
